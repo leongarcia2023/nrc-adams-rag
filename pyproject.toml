@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "adams-rag"
+version = "0.3.0"
+description = "NRC ADAMS ingestion, hybrid retrieval, cited generation and reusable APIs"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+test = ["numpy>=2,<3", "usearch>=2.26,<3", "tokenizers>=0.22,<1", "pypdf>=6,<7"]
+pdf = ["pypdf>=5,<7"]
+research = ["fastembed>=0.9,<0.10", "usearch>=2.26,<3", "pyarrow>=26,<27", "pypdf>=6,<7"]
+apple = ["mlx-lm>=0.32,<0.33"]
+ocr = ["pyobjc-framework-Vision==13.0; sys_platform == 'darwin'"]
+
+[project.scripts]
+adams-rag = "adams_rag.cli:main"
+adams-rag-server = "adams_rag.server:main"
+
+[tool.setuptools.packages.find]
+include = ["adams_rag*"]
+
+[tool.setuptools.package-data]
+adams_rag = ["web/*.html", "web/*.js", "web/*.css", "web/fonts/*.woff2", "web/fonts/OFL.txt", "_vendor/APPLE_MLX_LICENSE", "_vendor/APPLE_MLX_SOURCE.json"]

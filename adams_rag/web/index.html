@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="description" content="Ask a question of public NRC records and get an answer with sources.">
+  <title>NRC RAG</title>
+  <link rel="preload" href="/fonts/cmu-serif-500-roman.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Ask the NRC archive.</h1>
+      <p>Answers from public NRC records.</p>
+    </header>
+    <form id="query-form">
+      <label class="visually-hidden" for="question">Your question</label>
+      <textarea id="question" rows="2" maxlength="2000" placeholder="What would you like to know?" required enterkeyhint="send"></textarea>
+      <button id="submit" type="submit"><span id="submit-label">Ask</span><span class="arrow" aria-hidden="true">→</span></button>
+    </form>
+    <p id="progress" role="status" hidden><span class="reading-dot" aria-hidden="true"></span><span id="stage">Reading the records…</span></p>
+    <p id="error" role="alert" hidden></p>
+    <article id="result" aria-label="Answer" tabindex="-1" hidden>
+      <div id="answer"></div>
+      <p id="answer-note" hidden></p>
+      <details id="source-details" hidden>
+        <summary id="source-summary">Sources</summary>
+        <div id="sources"></div>
+        <div id="search-notes"></div>
+      </details>
+    </article>
+    <noscript><p>Please enable JavaScript to ask a question.</p></noscript>
+  </main>
+</body>
+</html>
