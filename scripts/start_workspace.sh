@@ -2,6 +2,7 @@
 # Start CPU services on an already installed and restored Linux workspace.
 set -euo pipefail
 repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$repo_dir"
 runtime_dir=${NRC_RUNTIME_DIR:-${NRC_WORKSPACE_ROOT:-/data/workspace}/nrc-runtime}
 if [[ -f "$runtime_dir/workspace.env" ]]; then
   set -a
@@ -24,6 +25,10 @@ mkdir -p "$runtime_dir"
 launch() {
   local service=$1 priority=$2
   local command=(bash "$repo_dir/scripts/workspace_service.sh" "$service")
+  if [[ "$service" == web ]]; then
+    command=("${NRC_PYTHON:-$repo_dir/.venv/bin/python}" -u -m adams_rag.service_supervisor
+      --stop-file "$runtime_dir/web.STOP" -- "${command[@]}")
+  fi
   if [[ -n "${NRC_CPUSET:-}" ]]; then
     command=(taskset -c "$NRC_CPUSET" "${command[@]}")
   fi
@@ -34,7 +39,7 @@ launch() {
 if [[ "${NRC_START_LOCAL_MODEL:-1}" == 1 ]] && ! curl -fsS --max-time 3 http://127.0.0.1:11434/api/version >/dev/null; then
   launch model 0
 fi
-if ! curl -fsS --max-time 3 http://127.0.0.1:8765/ >/dev/null; then
+if [[ ! -f "$runtime_dir/web.STOP" ]] && ! curl -fsS --max-time 3 http://127.0.0.1:8765/ >/dev/null; then
   launch web 0
 fi
 launch download 10

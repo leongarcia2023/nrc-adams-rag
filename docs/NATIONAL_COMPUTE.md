@@ -15,6 +15,38 @@ not a verified always-on public hosting service. Permanent industry access still
 needs funded persistent hosting, storage, a public HTTPS endpoint, authentication,
 monitoring, and an adequately sized model service on National Compute.
 
+## Enablement request for the National Compute administrator
+
+Provisioning, resource funding and application deployment are separate steps.
+The following are requested capabilities, not claims that these resources already
+exist or are included in Pro. The capacity figures are starting targets for a pilot,
+not a measured full-archive requirement or a National Compute SKU.
+
+| Enable | Initial target and acceptance condition |
+| --- | --- |
+| Sponsored project organization | Attribute CPU, model serving, storage, network and any control-plane charges to the sponsor. Confirm the coverage period and renewal before expiry. No personal card charges, credit advances, personal debt or automatic purchases on exhaustion; uncovered usage must be refused or paused. |
+| Permanent application hosting | Provision a managed Kubernetes cluster using the organization's grandfathered entitlement, or an equivalent supported permanent host. Target at least 4 CPU cores and 16 GiB RAM for the initial collection. It must run with the browser closed, restart workloads after host maintenance, and avoid idle suspension. Confirm actual CPU-worker size: NC's standard worker cannot be resized. |
+| Durable writable disk | Start with 250 GiB of persistent SSD for the current database/index and expansion, with a funded path to TiB-scale storage as the corpus grows. The current SQLite WAL database needs a supported local/block filesystem on one host; do not put it on the shared NFS volume. The disk must survive process and compute replacement. |
+| Archive and backup storage | Provision the organization's private S3 bucket (initial 2 TiB soft cap, expandable) or equivalent sponsored durable store. Resolve the Public Research organization restriction explicitly, potentially by using a sponsor's managed project organization. Preserve timestamped, consistent backups separately: NC buckets currently have no automatic versioning or backups. |
+| Model API | Prefer an existing sponsored, private inference endpoint with a suitable open model and documented concurrency/usage allowance. An Ollama endpoint is already supported through a loopback SSH tunnel. Otherwise allocate reserved model-serving capacity, potentially one GPU or a supported GPU share, and benchmark model size/quality before selecting it. This must be funded for the service lifetime; a preemptible four-hour Public Research rental is not a permanent endpoint. Marshall's interactive model allowance alone is not an app API. |
+| Industry access | Enable an external load balancer in a supported region, a stable HTTPS hostname, certificate renewal and restricted administration. Keep inference and storage private; only expose the authenticated web application. Confirm network/egress charges are covered. |
+
+If a sub-node GPU allocation is used, NC must enable its supported Base Load
+packing and provide the funded reserved capacity; ordinary market jobs request
+whole nodes. Do not submit a GPU job merely to discover its cost.
+
+The application still needs operational work before broad public access: individual
+accounts and quotas, durable request handling, monitored restart and restore tests,
+and source-reviewed NRC answer evaluation. Resource provisioning does not certify
+answer quality or complete the archive. Retain the existing private workspace while
+those checks run.
+
+Platform references, checked November 2026:
+[managed CPU workers and networking](https://docs.nationalcompute.com/kubernetes/),
+[bucket eligibility and durability limits](https://docs.nationalcompute.com/object-storage/),
+[funding scopes, expiry and unpaid usage](https://docs.nationalcompute.com/credits/),
+[SQLite WAL filesystem requirements](https://sqlite.org/wal.html).
+
 The app runs in the persistent Marshall workspace. Its database, Markdown archives,
 request ledger, and checkpoints stay together on that volume. A rented GPU can
 serve the answer model over an SSH tunnel; it does not need the archive or NRC key.
@@ -73,6 +105,12 @@ live in `data/archive/STATUS.json`, `data/index-cpu/BUILD_STATUS.json`, and
 Processes survive closing the browser, but may need this command again after a
 workspace restart. A saved `STOP` file continues to pause its worker. Rename that
 specific file when intentionally resuming; the launcher does not clear stop files.
+The web process has bounded crash recovery: five restarts with increasing delays,
+reset after ten minutes of stable running. A clean exit is not restarted. Creating
+`/data/workspace/nrc-runtime/web.STOP` stops the supervised web process and prevents
+another launch; it leaves the archive workers alone. Rename that file to resume.
+This handles an application crash, not a sleeping, stopped or restarted workspace.
+The launcher selects the repository directory before starting the supervisor.
 
 The web service queues up to eight questions behind one active worker (adjust
 `NRC_MAX_QUEUED` from 0 to 20). It searches retained documents without starting
