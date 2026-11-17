@@ -62,6 +62,11 @@ specific file when intentionally resuming; the launcher does not clear stop file
 CPU answers can take several minutes on the included quota. The configuration
 allows up to 15 minutes per model call and limits its CPU threads to two. This is
 a fallback for small workloads, not the throughput of the AMD deployment.
+On a CPU-limited workspace that exposes many host cores, set `NRC_CPUSET` to two
+allowed CPU IDs (inspect `os.sched_getaffinity(0)` first). Sharing that CPU set lets
+the lower background-worker priorities take effect; spreading every process across
+all host cores can consume the shared quota before the answer model gets its turn.
+Leave this unset on larger machines unless measurements show contention.
 
 Open the app by clicking its port link **inside the Marshall console**. That click
 authenticates the browser; opening a copied URL in a fresh browser may show a
