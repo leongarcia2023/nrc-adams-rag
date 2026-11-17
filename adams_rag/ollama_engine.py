@@ -1,6 +1,7 @@
 """Use the source-linked research pipeline with a local Ollama model."""
 import http.client
 import json
+import os
 import threading
 from urllib.parse import urlsplit
 
@@ -80,5 +81,5 @@ class OllamaEngine(MLXEngine):
 
 def make_engine(model_path, storage_path=None, ollama_model=None):
     if ollama_model:
-        return OllamaEngine(ollama_model)
+        return OllamaEngine(ollama_model, base_url=os.environ.get("ADAMS_OLLAMA_URL", "http://127.0.0.1:11434"))
     return MLXEngine(model_path, storage_path=storage_path) if model_ready(model_path) else None

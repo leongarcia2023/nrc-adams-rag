@@ -47,8 +47,8 @@ def main(argv=None):
         args.min_free_gb = reserve_gb(args.min_free_gb)
     except ValueError as error:
         parser.error(str(error))
-    if not 1 <= args.batch_size <= 10000 or not 0 < args.rps <= 6 or args.daily_limit < 1:
-        parser.error("Use 1–10,000 documents/batch, 0–6 requests/sec and a positive daily budget")
+    if not 1 <= args.batch_size <= 10000 or not 0 < args.rps <= 10 or args.daily_limit < 1:
+        parser.error("Use 1–10,000 documents/batch, 0 < requests/sec <= 10 and a positive daily budget")
     directory = Path(args.directory)
     directory.mkdir(parents=True, exist_ok=True)
     lock = (directory / "worker.lock").open("a")

@@ -26,7 +26,7 @@ python -m adams_rag.catalog --directory data/catalog \
 All request and daily budgets in these examples are local pacing settings,
 not a statement of NRC's quota. NRC support advised the project that the
 standard API allowance is 10 requests/second and that no bulk export is offered.
-The continuous text worker currently caps its setting at 6 requests/second.
+The continuous text worker caps its setting at 10 requests/second.
 Server cooldowns and retry/backoff still apply. Start at 2, measure, and stay
 within the allowance for the subscription being used.
 

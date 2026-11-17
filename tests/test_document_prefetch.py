@@ -234,13 +234,14 @@ class DocumentPrefetchTests(unittest.TestCase):
     def test_continuous_worker_can_enable_lookahead_and_finish_saved_catalog(self):
         args = ["--db", str(self.store.path), "--catalog", str(self.catalog),
                 "--rate-db", str(self.rate.path), "--directory", str(self.root / "archive"),
-                "--library", "main", "--batch-size", "3", "--rps", "6", "--min-free-gb", "0.5", "--prefetch"]
+                "--library", "main", "--batch-size", "3", "--rps", "10", "--min-free-gb", "0.5", "--prefetch"]
         with patch("adams_rag.archive_worker.load_api_key", return_value="fake-key"), patch("builtins.print"):
             main(args)
         status = json.loads((self.root / "archive/STATUS.json").read_text())
         self.assertEqual((status["state"], status["new_documents_this_run"]), ("scan_finished", 3))
         self.assertTrue(status["document_lookahead"])
         self.assertEqual(status["reserve_bytes"], 500_000_000)
+        self.assertEqual(status["local_rps_ceiling"], 10)
         self.assertEqual(self.calls, self.accessions)
         self.assertFalse(status["full_archive_verified"])
 

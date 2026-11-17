@@ -78,6 +78,13 @@ class OllamaEngineTests(unittest.TestCase):
             finally:
                 app.pool.shutdown(wait=True)
 
+    def test_workspace_tunnel_remains_loopback_only(self):
+        with patch.dict('os.environ', {'ADAMS_OLLAMA_URL': 'http://127.0.0.1:11435'}):
+            self.assertEqual(make_engine('unused', ollama_model='test').port, 11435)
+        with patch.dict('os.environ', {'ADAMS_OLLAMA_URL': 'https://example.com'}):
+            with self.assertRaises(ValueError):
+                make_engine('unused', ollama_model='test')
+
     def test_loopback_http_and_full_research_pipeline(self):
         response = self.response()
         class Handler(BaseHTTPRequestHandler):
