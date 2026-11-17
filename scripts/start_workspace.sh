@@ -10,6 +10,15 @@ if [[ -f "$runtime_dir/workspace.env" ]]; then
 fi
 : "${NRC_PUBLIC_ORIGIN:?Configure NRC_PUBLIC_ORIGIN in workspace.env}"
 : "${NRC_BASE_PATH:?Configure NRC_BASE_PATH in workspace.env}"
+export ADAMS_MODEL_PROVIDER=${ADAMS_MODEL_PROVIDER:-local}
+[[ "$ADAMS_MODEL_PROVIDER" == local ]] || {
+  echo 'This launcher uses the National Compute model service; external model providers are not enabled here.' >&2
+  exit 1
+}
+case "${NRC_START_LOCAL_MODEL:-1}" in
+  0|1) ;;
+  *) echo 'NRC_START_LOCAL_MODEL must be 0 or 1.' >&2; exit 1 ;;
+esac
 export NRC_MODEL=${NRC_MODEL:-qwen3:4b-instruct-2507-q4_K_M}
 mkdir -p "$runtime_dir"
 launch() {
@@ -22,7 +31,7 @@ launch() {
     "${command[@]}" \
     >> "$runtime_dir/$service.log" 2>&1 < /dev/null &
 }
-if ! curl -fsS --max-time 3 http://127.0.0.1:11434/api/version >/dev/null; then
+if [[ "${NRC_START_LOCAL_MODEL:-1}" == 1 ]] && ! curl -fsS --max-time 3 http://127.0.0.1:11434/api/version >/dev/null; then
   launch model 0
 fi
 if ! curl -fsS --max-time 3 http://127.0.0.1:8765/ >/dev/null; then

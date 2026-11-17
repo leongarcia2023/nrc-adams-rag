@@ -1,5 +1,10 @@
 # Hosted model API and permanent pilot
 
+**Project deployment target:** [National Compute](NATIONAL_COMPUTE.md), using
+confirmed included or sponsored resources without personal out-of-pocket spend.
+The external providers and cost comparisons below are optional technical reference,
+not the selected deployment plan. Nothing here authorizes an external subscription.
+
 The hosted adapter uses Groq for answer generation while the NRC archive,
 retrieval, source bindings, and citation validation remain in this application.
 Only the question and selected evidence are sent to Groq. Local MLX and Ollama

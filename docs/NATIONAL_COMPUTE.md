@@ -1,5 +1,20 @@
 # National Compute deployment
 
+National Compute is the target hosting platform for this project. The deployment
+constraint is no personal out-of-pocket spending: production compute, storage and
+model serving must fit confirmed included resources or a funded organization
+allocation. Membership access alone does not establish resource funding. Confirm
+the allocation's duration, service restrictions and overage treatment before
+provisioning permanent capacity. Do not enable external model subscriptions or
+automatic credit purchases as part of this deployment.
+
+The model API can be an Ollama server running on National Compute itself. The
+existing adapter already supports this over a private loopback SSH tunnel; no
+third-party model API subscription is necessary. The CPU workspace is a prototype,
+not a verified always-on public hosting service. Permanent industry access still
+needs funded persistent hosting, storage, a public HTTPS endpoint, authentication,
+monitoring, and an adequately sized model service on National Compute.
+
 The app runs in the persistent Marshall workspace. Its database, Markdown archives,
 request ledger, and checkpoints stay together on that volume. A rented GPU can
 serve the answer model over an SSH tunnel; it does not need the archive or NRC key.
@@ -59,6 +74,13 @@ Processes survive closing the browser, but may need this command again after a
 workspace restart. A saved `STOP` file continues to pause its worker. Rename that
 specific file when intentionally resuming; the launcher does not clear stop files.
 
+The web service queues up to eight questions behind one active worker (adjust
+`NRC_MAX_QUEUED` from 0 to 20). It searches retained documents without starting
+NRC requests from visitors; acquisition remains a separate background worker.
+Queued requests do not survive a process restart. The workspace launcher rejects
+an external model-provider selection, so a hosted API configuration cannot
+silently change this deployment's funding route.
+
 The AMD test produced a cited answer with this Qwen3 model. A focused CPU test
 using one retrieved passage also produced a cited answer, taking 456 seconds
 end to end while background workers were active. Broader CPU reliability is
@@ -102,6 +124,10 @@ ssh -N -o ExitOnForwardFailure=yes \
 
 Restart only the web process with `ADAMS_OLLAMA_URL=http://127.0.0.1:11435`
 and `NRC_MODEL=qwen3:4b-instruct-2507-q4_K_M`. Keep the model endpoint private.
+Set `NRC_START_LOCAL_MODEL=0` in the workspace configuration when the model is
+served on a separately funded National Compute node. This prevents future launcher
+runs from starting an unnecessary CPU model server; it does not stop an already
+running server, create a tunnel, rent capacity, or release a node.
 Before releasing the GPU, switch the web process back to the CPU configuration
 and save logs or other outputs to the persistent workspace.
 

@@ -37,7 +37,8 @@ case "${1:-web}" in
       --db "$data_dir/research.sqlite" --rate-db "$data_dir/adams.sqlite" \
       --catalog "$catalog_db" --index-dir "$data_dir/index-cpu" \
       --ollama-model "${NRC_MODEL:-qwen3:4b-instruct-2507-q4_K_M}" \
-      --public-origin "$NRC_PUBLIC_ORIGIN" --base-path "$NRC_BASE_PATH"
+      --public-origin "$NRC_PUBLIC_ORIGIN" --base-path "$NRC_BASE_PATH" \
+      --offline-only --max-queued "${NRC_MAX_QUEUED:-8}"
     ;;
   download)
     [[ -n "${ADAMS_API_KEY_FILE:-}" || -n "${ADAMS_API_KEY:-}" ]] || {
