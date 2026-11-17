@@ -1,4 +1,5 @@
 import json
+import shutil
 from pathlib import Path
 import tempfile
 import unittest
@@ -93,3 +94,25 @@ class MigrationTests(unittest.TestCase):
         value = SourceBindings(self.store.db).document(doc['AccessionNumber'])
         self.assertEqual(value['body'], doc['content'])
         self.assertEqual(value['document']['title'], 'Updated title')
+
+    def test_markdown_export_survives_collection_relocation(self):
+        from adams_rag.export import document_markdown
+        self.put(); migrate_versions(self.store, self.progress)
+        expected = document_markdown(self.store, 'ML000000001')
+        moved = self.root / 'relocated'; moved.mkdir()
+        shutil.copytree(self.directory, moved / 'markdown')
+        destination = Store(moved / 'research.sqlite')
+        try:
+            self.store.db.backup(destination.db)
+            for archive in self.directory.glob('*.zip'):
+                archive.rename(archive.with_suffix('.old'))
+            self.assertEqual(document_markdown(destination, 'ML000000001'), expected)
+            self.assertEqual(SourceBindings(destination.db).document('ML000000001')['body'],
+                             'Valve safety inspection. ' * 50)
+            # Relocation must retain checksum validation rather than trusting a basename.
+            with destination.db:
+                destination.db.execute("UPDATE markdown_checks SET markdown_sha256='wrong'")
+            with self.assertRaises(ValueError):
+                document_markdown(destination, 'ML000000001')
+        finally:
+            destination.db.close()

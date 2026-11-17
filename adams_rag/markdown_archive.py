@@ -342,7 +342,15 @@ def saved_markdown(store, accession):
     row = store.db.execute('SELECT * FROM markdown_checks WHERE accession=? AND policy=?', (accession, POLICY)).fetchone()
     if not row:
         return None
-    with zipfile.ZipFile(row['archive']) as archive:
+    archive_path = Path(row['archive'])
+    if not archive_path.is_file():
+        # Older manifests stored absolute paths. A relocated collection retains
+        # the unique archive basename and verifies its contents below.
+        root = (store.path.parent / 'markdown').resolve()
+        archive_path = (root / archive_path.name).resolve()
+        if not archive_path.is_relative_to(root):
+            raise ValueError('Saved Markdown archive escapes the collection')
+    with zipfile.ZipFile(archive_path) as archive:
         text = archive.read(row['member']).decode()
     header, _ = decode_markdown(text)
     if digest(text) != row['markdown_sha256'] or header['source_key'] != accession:
