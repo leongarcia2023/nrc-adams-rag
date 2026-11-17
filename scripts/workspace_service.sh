@@ -22,12 +22,12 @@ case "${1:-web}" in
     export OLLAMA_NO_CLOUD=1 OLLAMA_NUM_PARALLEL=1 OLLAMA_MAX_LOADED_MODELS=1 OLLAMA_KEEP_ALIVE=0
     exec "$runtime_dir/bin/ollama" serve
     ;;
-  web|download|index)
+  web|download|index|markdown)
     [[ -s "$data_dir/research.sqlite" && -s "$catalog_db" ]] || {
       echo 'Restore and verify the snapshot before starting services.' >&2; exit 1;
     }
     ;;
-  *) echo 'Usage: workspace_service.sh model|web|download|index' >&2; exit 2 ;;
+  *) echo 'Usage: workspace_service.sh model|web|download|index|markdown' >&2; exit 2 ;;
 esac
 case "${1:-web}" in
   web)
@@ -53,5 +53,15 @@ case "${1:-web}" in
   index)
     exec "$python_bin" -u -m adams_rag.index_worker \
       --db "$data_dir/research.sqlite" --directory "$data_dir/index-cpu" --backend cpu --follow
+    ;;
+  markdown)
+    while [[ ! -f "$data_dir/markdown/STOP" ]]; do
+      "$python_bin" -u -m adams_rag.markdown_archive --db "$data_dir/research.sqlite" \
+        --directory "$data_dir/markdown" --limit 2000 --batch-size 200
+      state=$("$python_bin" -c 'import json,sys; print(json.load(open(sys.argv[1]))["state"])' \
+        "$data_dir/markdown/STATUS.json")
+      [[ "$state" == storage_pause || "$state" == stopped ]] && break
+      sleep 60
+    done
     ;;
 esac

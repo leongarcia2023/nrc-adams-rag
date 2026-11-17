@@ -46,10 +46,13 @@ Then run:
 bash /data/workspace/nrc-adams-rag/scripts/start_workspace.sh
 ```
 
-This starts the app, CPU model service, acquisition, and CPU indexing. Indexing
+This starts the app, CPU model service, acquisition, CPU indexing, and Markdown
+preparation. The Markdown worker checks new text and records extraction holdouts;
+it does not certify the accuracy of NRC's OCR against every original page. Indexing
 runs at a lower CPU priority than interactive answers. Existing worker locks
 prevent duplicate writers. Logs append under `nrc-runtime`; worker status files
-live in `data/archive/STATUS.json` and `data/index-cpu/BUILD_STATUS.json`.
+live in `data/archive/STATUS.json`, `data/index-cpu/BUILD_STATUS.json`, and
+`data/markdown/STATUS.json`.
 Processes survive closing the browser, but may need this command again after a
 workspace restart. A saved `STOP` file continues to pause its worker. Rename that
 specific file when intentionally resuming; the launcher does not clear stop files.

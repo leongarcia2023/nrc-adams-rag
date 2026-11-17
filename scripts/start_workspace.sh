@@ -26,4 +26,5 @@ if ! curl -fsS --max-time 3 http://127.0.0.1:8765/ >/dev/null; then
 fi
 launch download 10
 launch index 15
+launch markdown 15
 echo "Services launched; check $runtime_dir/*.log and the archive/index status files."
