@@ -57,7 +57,7 @@ case "${1:-web}" in
   markdown)
     while [[ ! -f "$data_dir/markdown/STOP" ]]; do
       "$python_bin" -u -m adams_rag.markdown_archive --db "$data_dir/research.sqlite" \
-        --directory "$data_dir/markdown" --limit 2000 --batch-size 200
+        --directory "$data_dir/markdown" --limit "${NRC_MARKDOWN_LIMIT:-10000}" --batch-size 200
       state=$("$python_bin" -c 'import json,sys; print(json.load(open(sys.argv[1]))["state"])' \
         "$data_dir/markdown/STATUS.json")
       [[ "$state" == storage_pause || "$state" == stopped ]] && break
