@@ -8,6 +8,8 @@ This repository contains the application and tests. It does **not** contain the
 downloaded archive, API keys, model weights, or a complete copy of ADAMS. The
 existing collection can be transferred separately, or rebuilt with an NRC APS
 API subscription. See [the INL handoff guide](docs/INL_HANDOFF.md).
+For the persistent Marshall workspace, private app URL configuration, and optional
+AMD model server, see [the National Compute deployment guide](docs/NATIONAL_COMPUTE.md).
 
 ## What runs where
 
