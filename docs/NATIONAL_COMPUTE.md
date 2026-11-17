@@ -36,9 +36,9 @@ with the URL returned by Marshall's `port_open` operation for port 8765.
 ```sh
 NRC_PUBLIC_ORIGIN=https://YOUR-SHARD.workspaces.nationalcompute.com
 NRC_BASE_PATH=/user/YOUR-WORKSPACE/port/8765/
-NRC_MODEL=qwen2.5:1.5b-instruct-q4_K_M
+NRC_MODEL=qwen3:4b-instruct-2507-q4_K_M
 ADAMS_OLLAMA_THREADS=2
-ADAMS_OLLAMA_TIMEOUT=900
+ADAMS_OLLAMA_TIMEOUT=1800
 ADAMS_MIN_FREE_GB=5
 ```
 
@@ -59,9 +59,13 @@ Processes survive closing the browser, but may need this command again after a
 workspace restart. A saved `STOP` file continues to pause its worker. Rename that
 specific file when intentionally resuming; the launcher does not clear stop files.
 
-CPU answers can take several minutes on the included quota. The configuration
-allows up to 15 minutes per model call and limits its CPU threads to two. This is
-a fallback for small workloads, not the throughput of the AMD deployment.
+The AMD test produced a cited answer with this Qwen3 model. CPU generation is
+still experimental on the included quota: the initial Qwen3 test exceeded five
+minutes, and a smaller Qwen2.5 1.5B test exceeded 15 minutes. The configuration
+above allows up to 30 minutes per model call and limits its CPU threads to two;
+it does not establish that CPU answers will finish reliably. Use a separately
+budgeted model server for a responsive interface. Retrieval and ingestion can
+continue on the CPU without a rented GPU.
 On a CPU-limited workspace that exposes many host cores, set `NRC_CPUSET` to two
 allowed CPU IDs (inspect `os.sched_getaffinity(0)` first). Sharing that CPU set lets
 the lower background-worker priorities take effect; spreading every process across

@@ -10,7 +10,7 @@ if [[ -f "$runtime_dir/workspace.env" ]]; then
 fi
 : "${NRC_PUBLIC_ORIGIN:?Configure NRC_PUBLIC_ORIGIN in workspace.env}"
 : "${NRC_BASE_PATH:?Configure NRC_BASE_PATH in workspace.env}"
-export NRC_MODEL=${NRC_MODEL:-qwen2.5:1.5b-instruct-q4_K_M}
+export NRC_MODEL=${NRC_MODEL:-qwen3:4b-instruct-2507-q4_K_M}
 mkdir -p "$runtime_dir"
 launch() {
   local service=$1 priority=$2
