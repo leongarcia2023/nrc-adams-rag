@@ -37,6 +37,8 @@ with the URL returned by Marshall's `port_open` operation for port 8765.
 NRC_PUBLIC_ORIGIN=https://YOUR-SHARD.workspaces.nationalcompute.com
 NRC_BASE_PATH=/user/YOUR-WORKSPACE/port/8765/
 NRC_MODEL=qwen2.5:1.5b-instruct-q4_K_M
+ADAMS_OLLAMA_THREADS=2
+ADAMS_OLLAMA_TIMEOUT=900
 ADAMS_MIN_FREE_GB=5
 ```
 
@@ -56,6 +58,10 @@ live in `data/archive/STATUS.json`, `data/index-cpu/BUILD_STATUS.json`, and
 Processes survive closing the browser, but may need this command again after a
 workspace restart. A saved `STOP` file continues to pause its worker. Rename that
 specific file when intentionally resuming; the launcher does not clear stop files.
+
+CPU answers can take several minutes on the included quota. The configuration
+allows up to 15 minutes per model call and limits its CPU threads to two. This is
+a fallback for small workloads, not the throughput of the AMD deployment.
 
 Open the app by clicking its port link **inside the Marshall console**. That click
 authenticates the browser; opening a copied URL in a fresh browser may show a

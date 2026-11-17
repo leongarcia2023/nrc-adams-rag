@@ -85,6 +85,24 @@ class OllamaEngineTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 make_engine('unused', ollama_model='test')
 
+    def test_constrained_cpu_settings_are_applied_and_bounded(self):
+        with patch.dict('os.environ', {'ADAMS_OLLAMA_TIMEOUT': '900', 'ADAMS_OLLAMA_THREADS': '2'}):
+            engine = make_engine('unused', ollama_model='test')
+        self.assertEqual(engine.timeout, 900)
+        with patch.object(engine, '_post', side_effect=[{}, self.response()]) as post:
+            engine.generate(None, 'What happened?', self.evidence)
+        self.assertEqual(post.call_args.args[1]['options']['num_thread'], 2)
+        for settings in ({'timeout': 0}, {'timeout': 1801}, {'num_threads': 0}, {'num_threads': True}):
+            with self.assertRaises(ValueError):
+                OllamaEngine('test', **settings)
+
+    def test_timeout_is_distinguished_from_unreachable_server(self):
+        with patch('adams_rag.ollama_engine.http.client.HTTPConnection') as connection:
+            connection.return_value.getresponse.side_effect = TimeoutError()
+            with self.assertRaisesRegex(RuntimeError, 'exceeded its request timeout'):
+                self.engine._post('/api/chat', {})
+            connection.return_value.close.assert_called_once()
+
     def test_loopback_http_and_full_research_pipeline(self):
         response = self.response()
         class Handler(BaseHTTPRequestHandler):
