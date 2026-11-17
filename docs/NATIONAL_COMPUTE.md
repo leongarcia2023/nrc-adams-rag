@@ -62,7 +62,11 @@ specific file when intentionally resuming; the launcher does not clear stop file
 The AMD test produced a cited answer with this Qwen3 model. A focused CPU test
 using one retrieved passage also produced a cited answer, taking 456 seconds
 end to end while background workers were active. Broader CPU reliability is
-unproven: the initial Qwen3 test exceeded five minutes, and a smaller Qwen2.5 1.5B
+unproven. That CPU answer correctly described the cited code requirements, but
+omitted the passage's statement that the licensee failed to perform additional
+testing and a causal evaluation. Successful generation and valid citation IDs
+are not a complete answer-quality evaluation. The initial Qwen3 test exceeded
+five minutes, and a smaller Qwen2.5 1.5B
 test exceeded 15 minutes. The configuration above allows up to 30 minutes per
 model call and limits its CPU threads to two. Use a separately budgeted model
 server for a responsive interface. Retrieval and ingestion can continue on the
