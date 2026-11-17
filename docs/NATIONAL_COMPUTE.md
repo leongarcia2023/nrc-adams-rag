@@ -59,13 +59,14 @@ Processes survive closing the browser, but may need this command again after a
 workspace restart. A saved `STOP` file continues to pause its worker. Rename that
 specific file when intentionally resuming; the launcher does not clear stop files.
 
-The AMD test produced a cited answer with this Qwen3 model. CPU generation is
-still experimental on the included quota: the initial Qwen3 test exceeded five
-minutes, and a smaller Qwen2.5 1.5B test exceeded 15 minutes. The configuration
-above allows up to 30 minutes per model call and limits its CPU threads to two;
-it does not establish that CPU answers will finish reliably. Use a separately
-budgeted model server for a responsive interface. Retrieval and ingestion can
-continue on the CPU without a rented GPU.
+The AMD test produced a cited answer with this Qwen3 model. A focused CPU test
+using one retrieved passage also produced a cited answer, taking 456 seconds
+end to end while background workers were active. Broader CPU reliability is
+unproven: the initial Qwen3 test exceeded five minutes, and a smaller Qwen2.5 1.5B
+test exceeded 15 minutes. The configuration above allows up to 30 minutes per
+model call and limits its CPU threads to two. Use a separately budgeted model
+server for a responsive interface. Retrieval and ingestion can continue on the
+CPU without a rented GPU.
 On a CPU-limited workspace that exposes many host cores, set `NRC_CPUSET` to two
 allowed CPU IDs (inspect `os.sched_getaffinity(0)` first). Sharing that CPU set lets
 the lower background-worker priorities take effect; spreading every process across
