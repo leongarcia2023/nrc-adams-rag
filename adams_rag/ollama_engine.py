@@ -90,6 +90,12 @@ class OllamaEngine(MLXEngine):
 
 
 def make_engine(model_path, storage_path=None, ollama_model=None):
+    provider = os.environ.get("ADAMS_MODEL_PROVIDER", "local")
+    if provider != "local":
+        if provider != "groq" or ollama_model:
+            raise ValueError("Select either the Groq API provider or a local model, not both")
+        from .hosted_engine import from_environment
+        return from_environment(storage_path or ".")
     if ollama_model:
         threads = os.environ.get("ADAMS_OLLAMA_THREADS")
         return OllamaEngine(ollama_model,

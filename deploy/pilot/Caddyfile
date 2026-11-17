@@ -1,0 +1,17 @@
+# Template for a private, shared-team pilot, not anonymous public access.
+# Configure these environment variables in Caddy's service:
+# NRC_DOMAIN, NRC_PILOT_USER, NRC_PILOT_PASSWORD_HASH.
+# Generate the hash interactively with `caddy hash-password`; keep it out of Git.
+{$NRC_DOMAIN} {
+    route {
+        basic_auth {
+            {$NRC_PILOT_USER} {$NRC_PILOT_PASSWORD_HASH}
+        }
+        # No global list of other people's questions or operational status.
+        @internal path /api/history /api/status
+        respond @internal 404
+        reverse_proxy 127.0.0.1:8765 {
+            header_up -Authorization
+        }
+    }
+}

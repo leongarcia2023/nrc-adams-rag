@@ -1,4 +1,4 @@
-"""Loopback-only RAG API. One inference/ingestion job at a time on a personal Mac."""
+"""Loopback-only RAG API with a bounded single-worker research queue."""
 from __future__ import annotations
 
 from .source_content import read_text
@@ -13,7 +13,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from .client import AdamsClient
 from .config import load_api_key
-from .models import model_ready
+from .models import MLXEngine, model_ready
 from .ollama_engine import make_engine
 from .research import catalog_coverage, research
 from .semantic_index import SemanticIndex, active_model, search_index, window_search_enabled
@@ -22,7 +22,11 @@ from .transport import PersistentOpener
 
 
 class Application:
-    def __init__(self, db, rate_db, catalog, model_path, index_dir, ollama_model=None):
+    def __init__(self, db, rate_db, catalog, model_path, index_dir, ollama_model=None,
+                 max_queued=0, offline_only=False):
+        if type(max_queued) is not int or not 0 <= max_queued <= 20:
+            raise ValueError("Use a research queue capacity between 0 and 20")
+        self.max_queued, self.offline_only = max_queued, offline_only
         self.db, self.rate_db, self.catalog = Path(db), Path(rate_db), Path(catalog)
         self.index_dir, self.model_path = Path(index_dir), Path(model_path)
         self.engine = make_engine(self.model_path, storage_path=self.db.parent, ollama_model=ollama_model)
@@ -39,7 +43,8 @@ class Application:
             return {"collection": store.status(), "catalog": catalog_coverage(self.catalog),
                     "semantic_retrieval_model": active_model(self.index_dir),
                     "semantic_window_search_enabled": window_search_enabled(self.index_dir),
-                    "local_model_installed": generation["state"] != "model_unavailable",
+                    "local_model_installed": generation["state"] != "model_unavailable" and generation.get("execution") != "hosted_api",
+                    "queue_capacity": self.max_queued, "offline_only": self.offline_only,
                     "generation": generation,
                     "adams_connected": bool(load_api_key()), "preparation": self.preparation(),
                     "capabilities": ["ingestion", "version_history", "catalog_lookup", "legacy_digitization_links", "keyword_retrieval", "identifier_retrieval", "semantic_retrieval",
@@ -112,12 +117,19 @@ class Application:
             if type(value) is not int or not 1 <= value <= 20:
                 raise ValueError(f"{key} must be between 1 and 20")
         with self.lock:
-            if any(j["state"] in {"queued", "running"} for j in self.jobs.values()):
+            active = sum(j["state"] in {"queued", "running"} for j in self.jobs.values())
+            if active >= self.max_queued + 1:
                 raise RuntimeError("A research run is already active. Wait for it to finish before submitting another.")
             job_id = str(uuid.uuid4())
             self.jobs[job_id] = {"id": job_id, "state": "queued", "stage": "Queued", "detail": ""}
-            if len(self.jobs) > 30:
-                del self.jobs[next(iter(self.jobs))]
+            for old_id in list(self.jobs):
+                if len(self.jobs) <= 30:
+                    break
+                if self.jobs[old_id]["state"] not in {"queued", "running"}:
+                    del self.jobs[old_id]
+        payload = dict(payload)
+        if self.offline_only:
+            payload["live"] = False
         self.pool.submit(self.run, job_id, payload, generate)
         return self.jobs[job_id].copy()
 
@@ -206,6 +218,9 @@ def handler_for(app, public_origin=None, base_path=""):
                 return self.send({"error": "Invalid local host"}, 403)
             route = self.request_path()
             try:
+                if route.path == "/healthz":
+                    # Liveness only: no provider call, database scan, or expensive status work.
+                    return self.send({"state": "alive"})
                 if route.path == "/api/status":
                     return self.send(app.status())
                 if route.path in {"/v1/catalog/legacy-links", "/api/catalog/legacy-links"}:
@@ -348,8 +363,11 @@ def main(argv=None):
     p.add_argument("--port", type=int, default=8765)
     p.add_argument("--public-origin", help="Exact HTTPS origin of an authenticated reverse proxy")
     p.add_argument("--base-path", default="", help="Path prefix used by the authenticated reverse proxy")
+    p.add_argument("--max-queued", type=int, default=0, help="Queued requests behind the single research worker (0-20)")
+    p.add_argument("--offline-only", action="store_true", help="Search the retained corpus only, even when a client requests live NRC calls")
     args = p.parse_args(argv)
-    app = Application(args.db, args.rate_db, args.catalog, args.model_path, args.index_dir, args.ollama_model)
+    app = Application(args.db, args.rate_db, args.catalog, args.model_path, args.index_dir,
+                      args.ollama_model, args.max_queued, args.offline_only)
     server = ThreadingHTTPServer(("127.0.0.1", args.port), handler_for(app, args.public_origin, args.base_path))
     print(f"NRC RAG listening at http://127.0.0.1:{args.port}", flush=True)
     try:

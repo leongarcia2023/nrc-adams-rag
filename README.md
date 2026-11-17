@@ -95,6 +95,9 @@ python -m adams_rag --db data/research.sqlite --json retrieve \
 
 ## Generate answers locally
 
+For a prepared hosted-model alternative with disabled-by-default spending,
+cost estimates, and Linux pilot service templates, see [hosted API deployment](docs/HOSTED_API.md).
+
 Install [Ollama](https://docs.ollama.com/) and a local text model approved for
 your machine. Start its local server and set the exact installed model name:
 

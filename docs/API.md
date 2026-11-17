@@ -3,6 +3,12 @@
 Start the server as documented in the README. All routes are on
 `http://127.0.0.1:8765`. Requests return JSON. The server permits one active
 research job and returns HTTP 409 if another is already running.
+`--max-queued N` permits up to N waiting jobs (0–20), still with one active worker.
+`--offline-only` forces retained-corpus retrieval for all clients. `GET /healthz`
+checks process liveness without calling a model or scanning the collection.
+See [hosted API deployment](HOSTED_API.md) for explicit hosted-model activation
+and its persistent spending allowance. The localhost server requires an
+authenticated HTTPS proxy before sharing it with a pilot team.
 
 Retrieve reusable evidence without generating an answer:
 

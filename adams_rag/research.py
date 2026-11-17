@@ -401,14 +401,14 @@ def research(store, question, *, engine=None, semantic=None, client=None, catalo
         result.update(answer="No supporting passages were found in this bounded retrieval. This does not establish that ADAMS has no answer.", insufficient_evidence=True)
     elif generate and engine:
         if progress:
-            progress("Generating a cited answer", "The local model is reading the retrieved passages")
+            progress("Generating a cited answer", "The answer model is reading the retrieved passages")
         try:
             result.update(engine.generate(None, question, evidence), mode="generated",
                           citation_check="citation_identifiers_validated; entailment_not_verified")
         except (ValueError, RuntimeError, KeyError, OSError) as error:
             warnings.append(f"Generated answer withheld: {error}")
     elif generate:
-        warnings.append("The local answer model is not ready. Retrieved context is returned without generation.")
+        warnings.append("The answer model is not ready. Retrieved context is returned without generation.")
     result["elapsed_seconds"] = round(time.monotonic() - started, 2)
     store.db.execute("CREATE TABLE IF NOT EXISTS research_runs(id TEXT PRIMARY KEY, created TEXT, result TEXT)")
     with store.db:
