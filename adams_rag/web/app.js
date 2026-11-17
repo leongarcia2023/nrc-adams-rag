@@ -1,6 +1,7 @@
 "use strict";
 const $ = id => document.getElementById(id);
-const SESSION_KEY = 'nrc-current-question';
+const SESSION_KEY = 'nrc-current-question:' + location.pathname;
+const appURL = path => new URL(path.replace(/^\/+/, ''), new URL('./', location.href)).href;
 let active = false;
 let pending = null;
 let current = null;
@@ -15,7 +16,7 @@ async function api(path, options = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 30000);
   try {
-    const response = await fetch(path, {...options, signal: controller.signal});
+    const response = await fetch(appURL(path), {...options, signal: controller.signal});
     const data = await response.json();
     if (!response.ok) {
       const error = new Error(response.status === 409 ? 'Another question is being answered. Please try again shortly.' : (data.error || 'The request could not be completed.'));
@@ -140,7 +141,7 @@ async function render(result) {
     article.append(node('p', [source.source_accession || source.accession, location, source.document_date, source.dataset ? 'Community text' : null].filter(Boolean).join(' · '), 'metadata'));
     article.append(node('blockquote', source.text));
     const links = node('p', undefined, 'source-links'); links.append(safeLink('Original document', source.url));
-    const download = node('a', 'Markdown'); download.href = '/api/document/markdown?' + new URLSearchParams({accession: source.accession, ...(source.source_version?.version ? {version:source.source_version.version} : {})});
+    const download = node('a', 'Markdown'); download.href = appURL('/api/document/markdown') + '?' + new URLSearchParams({accession: source.accession, ...(source.source_version?.version ? {version:source.source_version.version} : {})});
     download.download = source.accession.replace(/[^A-Za-z0-9_.-]/g, '_') + '.md'; links.append(download); article.append(links); $('sources').append(article);
   }
   $('search-notes').append(node('p', 'This search covers part of the NRC archive. It cannot establish that every relevant document was found.'));

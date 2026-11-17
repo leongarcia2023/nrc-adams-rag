@@ -162,13 +162,33 @@ class Application:
                 rate.db.close()
 
 
-def handler_for(app):
+def handler_for(app, public_origin=None, base_path=""):
+    """Allow one explicitly configured authenticated proxy, retaining local defaults."""
+    if public_origin:
+        origin = urlsplit(public_origin)
+        if (origin.scheme != "https" or not origin.hostname or origin.username or origin.password
+                or origin.path not in {"", "/"} or origin.query or origin.fragment):
+            raise ValueError("The proxy origin must be one HTTPS origin without a path")
+        public_origin = "https://" + origin.netloc
+    if base_path and (not base_path.startswith("/") or ".." in base_path or "?" in base_path or "#" in base_path):
+        raise ValueError("Use an absolute proxy base path without query or parent traversal")
+    base_path = base_path.rstrip("/")
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):
             pass  # Query text and source content do not enter access logs.
 
         def valid_host(self):
-            return self.headers.get("Host") in {f"localhost:{self.server.server_port}", f"127.0.0.1:{self.server.server_port}"}
+            hosts = {f"localhost:{self.server.server_port}", f"127.0.0.1:{self.server.server_port}"}
+            if public_origin:
+                hosts.add(urlsplit(public_origin).netloc)
+            return self.headers.get("Host") in hosts
+
+        def request_path(self):
+            route = urlsplit(self.path)
+            path = route.path
+            if base_path and (path == base_path or path.startswith(base_path + "/")):
+                path = path[len(base_path):] or "/"
+            return route._replace(path=path)
 
         def send(self, value, status=200, content_type="application/json; charset=utf-8"):
             data = json.dumps(value, ensure_ascii=False).encode() if content_type.startswith("application/json") else value
@@ -184,7 +204,7 @@ def handler_for(app):
         def do_GET(self):
             if not self.valid_host():
                 return self.send({"error": "Invalid local host"}, 403)
-            route = urlsplit(self.path)
+            route = self.request_path()
             try:
                 if route.path == "/api/status":
                     return self.send(app.status())
@@ -293,6 +313,8 @@ def handler_for(app):
 
         def do_POST(self):
             origins = {f"http://localhost:{self.server.server_port}", f"http://127.0.0.1:{self.server.server_port}"}
+            if public_origin:
+                origins.add(public_origin)
             if not self.valid_host() or (self.headers.get("Origin") and self.headers["Origin"] not in origins):
                 return self.send({"error": "Only same-origin local requests are accepted"}, 403)
             if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
@@ -304,9 +326,10 @@ def handler_for(app):
                 payload = json.loads(self.rfile.read(length))
                 if not isinstance(payload, dict):
                     raise ValueError("Expected a JSON object")
-                if self.path not in {"/api/research", "/v1/retrieve", "/v1/rag"}:
+                path = self.request_path().path
+                if path not in {"/api/research", "/v1/retrieve", "/v1/rag"}:
                     return self.send({"error": "Not found"}, 404)
-                return self.send(app.submit(payload, generate=self.path != "/v1/retrieve"), 202)
+                return self.send(app.submit(payload, generate=path != "/v1/retrieve"), 202)
             except (ValueError, TypeError) as error:
                 return self.send({"error": str(error)}, 400)
             except RuntimeError as error:
@@ -323,9 +346,11 @@ def main(argv=None):
     p.add_argument("--ollama-model", help="Use an installed local Ollama model instead of MLX")
     p.add_argument("--index-dir", default="data/index")
     p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--public-origin", help="Exact HTTPS origin of an authenticated reverse proxy")
+    p.add_argument("--base-path", default="", help="Path prefix used by the authenticated reverse proxy")
     args = p.parse_args(argv)
     app = Application(args.db, args.rate_db, args.catalog, args.model_path, args.index_dir, args.ollama_model)
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), handler_for(app))
+    server = ThreadingHTTPServer(("127.0.0.1", args.port), handler_for(app, args.public_origin, args.base_path))
     print(f"NRC RAG listening at http://127.0.0.1:{args.port}", flush=True)
     try:
         server.serve_forever()
