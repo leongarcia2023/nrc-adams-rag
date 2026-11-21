@@ -86,6 +86,29 @@ class CPUContextTests(unittest.TestCase):
             finally:
                 store.db.close()
 
+    def test_history_retains_multiple_years_and_cpu_sources_with_exact_spans(self):
+        with tempfile.TemporaryDirectory() as root:
+            store = Store(Path(root) / 'research.sqlite')
+            try:
+                with store.db:
+                    for i in range(15):
+                        store.put({'AccessionNumber': f'A{i}', 'DocumentTitle': 'Oklo combined license application acceptance audit',
+                            'DocumentDate': '2020-06-01', 'content': 'Oklo reactor application acceptance review audit plan. ' * 100})
+                    for year, event in [(2020, 'acceptance'), (2022, 'denial'), (2025, 'readiness'), (2026, 'licensing plan')]:
+                        store.put({'AccessionNumber': f'E{year}', 'DocumentTitle': f'Oklo license application {event}',
+                            'DocumentDate': f'{year}-06-01', 'content': f'In {year}, the NRC documented the {event}. ' * 100})
+                question = 'What is the history of Oklo permits for their reactor?'
+                evidence = hybrid_retrieve(store, question)
+                self.assertEqual({s['document_date'][:4] for s in evidence[:4]}, {'2020','2022','2025','2026'})
+                _, data, audit = pack(question, evidence)
+                self.assertEqual(len(data['sources']), 4)
+                self.assertLessEqual(audit['input_bytes'], 4500)
+                for item, span in zip(data['sources'], audit['source_spans']):
+                    text = evidence[item['source_id'] - 1]['text']
+                    self.assertEqual(item['text'], text[span['start_character']:span['end_character']])
+            finally:
+                store.db.close()
+
     def test_named_subject_topic_prefers_license_over_unrelated_company_records(self):
         with tempfile.TemporaryDirectory() as root:
             store = Store(Path(root) / 'research.sqlite')

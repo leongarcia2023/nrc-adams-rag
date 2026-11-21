@@ -12,6 +12,25 @@ def history_question(question):
     return bool(HISTORY.search(question))
 
 
+def decision_title(title):
+    """Prefer an actual decision over an audit of an acceptance review."""
+    return bool(re.search(r'\b(?:deni\w*|reject\w*|withdraw\w*|accept\w*)\b', title, re.I)
+                and not re.search(r'\b(?:audit|plan|meeting|draft)\b', title, re.I))
+
+
+def history_order(rows):
+    """Keep relevant milestones from distinct years ahead of repeated events."""
+    years, representatives, remaining = set(), [], []
+    for row in rows:
+        year = str(row.get('document_date') or '')[:4]
+        if (len(representatives) < 4 and year.isdigit() and year not in years
+                and MILESTONE.search(row['title'])):
+            years.add(year); representatives.append(row)
+        else:
+            remaining.append(row)
+    return representatives + remaining
+
+
 def topic_terms(question, phrases):
     names = {w.casefold() for p in phrases for w in re.findall(r'\w+', p)}
     terms = {w[:6] for w in re.findall(r'[a-z0-9]+', question.casefold())

@@ -77,7 +77,7 @@ def search_live(store, client, question, queries, *, docket=None, date_from=None
         candidates[accession] = {"AccessionNumber": accession}
         scores[accession] = 100
     filters = aps_filters(docket, date_from, date_to)
-    from .query_terms import subject_phrases, contains_subject, topic_terms, history_question, MILESTONE
+    from .query_terms import subject_phrases, contains_subject, topic_terms, history_question, MILESTONE, decision_title
     phrases = subject_phrases(question)
     if not direct and not legacy_scope:
         for query in queries[:2]:
@@ -104,6 +104,8 @@ def search_live(store, client, question, queries, *, docket=None, date_from=None
                         pending_scores[accession] = pending_scores.get(accession, 0) + 1 / (30 + rank) + (.1 if title_match else 0)
                         if title_match and history_question(question):
                             pending_scores[accession] += .03 * min(3, len(MILESTONE.findall(doc.get('DocumentTitle') or '')))
+                            if decision_title(doc.get('DocumentTitle') or ''):
+                                pending_scores[accession] += .06
                 candidates.update(pending)
                 legacy_records.update(pending_legacy)
                 for accession, score in pending_scores.items():
@@ -161,7 +163,7 @@ def search_live(store, client, question, queries, *, docket=None, date_from=None
 
 def rank_candidates(store, question, semantic=None, docket=None, date_from=None, date_to=None, focus=None, exclusions=None, source_issues=None):
     validate_filters(docket, date_from, date_to)
-    from .query_terms import subject_phrases, contains_subject, topic_terms, history_question, MILESTONE
+    from .query_terms import subject_phrases, contains_subject, topic_terms, history_question, MILESTONE, decision_title
     phrases = subject_phrases(question) if not ACCESSION.search(question) else []
     topics = topic_terms(question, phrases) if phrases else set()
     lexical = store.lexical(question, 200, docket, date_from, date_to)
@@ -221,6 +223,8 @@ def rank_candidates(store, question, semantic=None, docket=None, date_from=None,
             scores[key] += .04
             if history_question(question):
                 scores[key] += .02 * min(3, len(MILESTONE.findall(row['title'])))
+                if decision_title(row['title']):
+                    scores[key] += .05
         if topics:
             title_terms = {w[:6] for w in re.findall(r'[a-z0-9]+', row['title'].casefold())}
             body_terms = {w[:6] for w in re.findall(r'[a-z0-9]+', row['text'].casefold())}
@@ -262,7 +266,7 @@ def _hybrid_retrieve(store, question, semantic, top_k, docket, date_from, date_t
     from .evidence import SourceBindings,SourceBindingError,report_binding_issue
     bindings=SourceBindings(store.db)
     ranked = rank_candidates(store, question, semantic, docket, date_from, date_to, focus, exclusions, source_issues)
-    from .query_terms import history_question
+    from .query_terms import history_question, history_order
     if history_question(question):
         # Spend the small context on different records before repeated chunks.
         seen_documents, first, rest = set(), [], []
@@ -271,7 +275,7 @@ def _hybrid_retrieve(store, question, semantic, top_k, docket, date_from, date_t
                 rest.append(row)
             else:
                 seen_documents.add(row['accession']); first.append(row)
-        ranked = first + rest
+        ranked = history_order(first) + rest
     direct = {a.upper() for a in ACCESSION.findall(question)}
     if direct or scope_accessions is not None:
         allowed = {a.casefold() for a in (scope_accessions if scope_accessions is not None else direct | set(focus or []))}

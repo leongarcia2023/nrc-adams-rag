@@ -87,7 +87,7 @@ class OllamaEngineTests(unittest.TestCase):
                 make_engine('unused', ollama_model='test')
 
     def test_constrained_cpu_settings_are_applied_and_bounded(self):
-        with patch.dict('os.environ', {'ADAMS_OLLAMA_TIMEOUT': '900', 'ADAMS_OLLAMA_THREADS': '2'}):
+        with patch.dict('os.environ', {'ADAMS_OLLAMA_TIMEOUT': '900', 'ADAMS_OLLAMA_THREADS': '2', 'ADAMS_OLLAMA_CPU_ONLY': '0'}):
             engine = make_engine('unused', ollama_model='test')
         self.assertEqual(engine.timeout, 900)
         with patch.object(engine, '_post', side_effect=[{}, self.response()]) as post:
