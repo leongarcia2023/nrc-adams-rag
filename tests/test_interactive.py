@@ -355,6 +355,23 @@ class InteractiveTests(unittest.TestCase):
         self.assertNotIn('§ 50.23', snippet)
         self.assertIn('Operation requires', snippet)
 
+    def test_exact_cfr_section_does_not_become_an_unrelated_amendment_rule(self):
+        for i in range(8):
+            self.put(f'OTHER{i}', 'Application for amendment of license',
+                     'Under 10 CFR 50.90 an application describes the desired license amendment.')
+        question = 'Under 10 CFR 50.59, when is a license amendment required?'
+        self.assertEqual(hybrid_retrieve(self.store, question), [])
+        self.put('RIGHT', 'Guidance concerning 10 CFR 50.59',
+                 'Under 10 CFR 50.59(c)(2), evaluate the change against the specified criteria.')
+        self.put('WRONG-SUFFIX', 'A different reference', 'Section 50.590 discusses license amendments.')
+        sources = hybrid_retrieve(self.store, question)
+        self.assertEqual({s['accession'] for s in sources}, {'RIGHT'})
+
+    def test_section_parser_preserves_comparison_references_not_decimals(self):
+        from adams_rag.query_terms import cfr_sections
+        self.assertEqual(cfr_sections('Compare 10 CFR 50.59 and § 50.90'), ['50.59', '50.90'])
+        self.assertEqual(cfr_sections('What happened at 50.59 percent power?'), [])
+
 
 if __name__ == '__main__':
     unittest.main()

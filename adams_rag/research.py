@@ -216,6 +216,10 @@ def rank_candidates(store, question, semantic=None, docket=None, date_from=None,
     rankings = [lexical]
     from .query_terms import inquiry_kind, question_facets
     facets = question_facets(question)
+    from .query_terms import cfr_sections, contains_section
+    sections = cfr_sections(question)
+    for section in sections:
+        rankings.append(store.lexical('"' + section + '"', 100, docket, date_from, date_to))
     if inquiry_kind(question) == 'comparison' and not phrases and len(facets) > 1:
         for facet in facets:
             rankings.append(store.lexical(facet, 40, docket, date_from, date_to, require_all=True))
@@ -285,7 +289,7 @@ def rank_candidates(store, question, semantic=None, docket=None, date_from=None,
             by_id[row['id']] = row
             scores[row['id']] = scores.get(row['id'], 0) + .04
     for key, row in by_id.items():
-        if inquiry_kind(question) in {'requirements', 'comparison'} and not phrases:
+        if inquiry_kind(question) in {'requirements', 'comparison'} and not phrases and not sections:
             # Prefer a relevant regulatory section over incidental mentions in
             # fee tables or historical comments. Provenance remains visible.
             if row.get('provenance') == 'community_regulatory_text' and re.match(r'\s*§\s*\d+\.\d+', row['text']):
@@ -329,6 +333,10 @@ def rank_candidates(store, question, semantic=None, docket=None, date_from=None,
         order.sort(key=scores.get, reverse=True)
     from .extraction_review import filter_rows
     rows = [{**by_id[key], "retrieval_score": scores[key]} for key in order]
+    if sections and not direct:
+        # An explicitly named rule must not silently become a different rule
+        # merely because both mention licenses, applications or amendments.
+        rows = [r for r in rows if contains_section(r['title'] + '\n' + r['text'], sections)]
     if phrases:
         # A semantic neighbor about a different company is not evidence about
         # the named subject. Never silently relax a missing name into OR words.

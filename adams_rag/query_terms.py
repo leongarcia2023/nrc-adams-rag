@@ -15,6 +15,16 @@ def history_question(question):
     return bool(HISTORY.search(question))
 
 
+def cfr_sections(question):
+    """Explicit section references, not ordinary decimal quantities."""
+    return list(dict.fromkeys(re.findall(r'(?:\b10\s*CFR\s*(?:§\s*)?|§\s*)(\d+\.\d+)', question, re.I)))[:6]
+
+
+def contains_section(text, sections):
+    return any(re.search(r'(?<!\d)' + re.escape(section).replace(r'\.', r'\s*\.\s*') + r'(?!\d)', text)
+               for section in sections)
+
+
 def inquiry_kind(question):
     if COMPARISON.search(question):
         return 'comparison'
