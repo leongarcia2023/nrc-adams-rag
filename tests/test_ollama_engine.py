@@ -109,7 +109,8 @@ class OllamaEngineTests(unittest.TestCase):
                     'ADAMS_OLLAMA_KEEP_ALIVE_SECONDS': '120'}
         with patch.dict('os.environ', settings):
             engine = make_engine('unused', ollama_model='test')
-        with patch.object(engine, '_post', side_effect=[{}, self.response()]) as post:
+        response = self.response(message={'content': json.dumps({'notes': {'1': 'The pump leaked.'}, 'gap': ''})})
+        with patch.object(engine, '_post', side_effect=[{}, response]) as post:
             engine.generate(None, 'What happened?', self.evidence)
         payload = post.call_args.args[1]
         self.assertEqual(payload['options']['num_gpu'], 0)
@@ -184,8 +185,7 @@ class OllamaEngineTests(unittest.TestCase):
             thread.join()
 
     def test_stream_reports_writing_only_after_content_and_retains_metrics(self):
-        fragments = ['{"paragraphs":', '[{"text":"The pump leaked.","source_ids":[1]}],',
-                     '"insufficient_evidence":false,"gaps":[]}']
+        fragments = ['{"notes":', '{"1":"The pump leaked."},', '"gap":""}']
         events = []
         class Handler(BaseHTTPRequestHandler):
             protocol_version = 'HTTP/1.1'

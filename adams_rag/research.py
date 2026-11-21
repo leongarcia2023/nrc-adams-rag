@@ -564,8 +564,12 @@ def research(store, question, *, engine=None, semantic=None, client=None, catalo
         warnings.append('This run searched the downloaded collection only; current NRC updates were not checked.')
     from .query_terms import inquiry_kind
     result['inquiry_kind'] = inquiry_kind(question)
+    preview = None
+    if interactive and generate and evidence:
+        from .interactive import excerpt_preview
+        preview = excerpt_preview(question, evidence)
     if evidence_ready:
-        evidence_ready(result)
+        evidence_ready({**result, 'answer': preview, 'answer_kind': 'source_excerpts'} if preview else result)
     timings['evidence_ready_seconds'] = round(time.monotonic() - started, 3)
     generation_started = time.monotonic()
     if not evidence:
@@ -581,6 +585,9 @@ def research(store, question, *, engine=None, semantic=None, client=None, catalo
                           citation_check="citation_identifiers_validated; entailment_not_verified")
         except (ValueError, RuntimeError, KeyError, OSError) as error:
             warnings.append(f"Generated answer withheld: {error}")
+            if preview:
+                result.update(answer='A generated answer was not available.\n\n' + preview,
+                              answer_kind='source_excerpts', insufficient_evidence=True)
     elif generate:
         warnings.append("The answer model is not ready. Retrieved context is returned without generation.")
     timings['generation_seconds'] = round(time.monotonic() - generation_started, 3)

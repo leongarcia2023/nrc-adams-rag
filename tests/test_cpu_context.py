@@ -41,9 +41,8 @@ class CPUContextTests(unittest.TestCase):
     def test_cpu_rejects_citations_to_passages_it_did_not_read(self):
         evidence = [{'citation': i + 1, 'accession': str(i), 'title': 'Title', 'text': 'Valve failed. ' * 300} for i in range(10)]
         engine = OllamaEngine('test', cpu_only=True)
-        with patch.object(engine, 'complete', return_value={'paragraphs': [{'text': 'Claim', 'source_ids': [10]}],
-                                                          'insufficient_evidence': False, 'gaps': []}):
-            with self.assertRaisesRegex(ValueError, 'outside its reading budget'):
+        with patch.object(engine, 'complete', return_value={'notes': {'10': 'Claim.'}, 'gap': ''}):
+            with self.assertRaisesRegex(ValueError, 'each supplied source'):
                 engine.generate(None, 'valve', evidence)
 
     def test_company_name_is_not_relaxed_to_ordinary_words_or_semantic_neighbors(self):

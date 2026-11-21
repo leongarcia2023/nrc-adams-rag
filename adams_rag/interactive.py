@@ -33,8 +33,24 @@ def collection_revision(store):
     return identity, generation
 
 
+def excerpt_preview(question, evidence):
+    """Show exact source slices promptly, without presenting them as synthesis."""
+    from .cpu_context import pack_compact
+    if not evidence:
+        return None
+    try:
+        _, data, _ = pack_compact(question, evidence)
+    except ValueError:
+        return None
+    lines = ['Selected source excerpts:']
+    for source in data['sources']:
+        text = ' '.join(source['text'].split())
+        lines.append('“' + text + '” [' + str(source['source_id']) + ']')
+    return '\n\n'.join(lines)
+
+
 class AnswerCache:
-    """Memory-only, exact-request reuse. No failures, partial answers or disk copy."""
+    """Memory-only, exact-request reuse. No failed generations or disk copy."""
     def __init__(self, limit=16, ttl=120, clock=time.monotonic):
         self.entries = OrderedDict()
         self.limit, self.ttl, self.clock = limit, ttl, clock

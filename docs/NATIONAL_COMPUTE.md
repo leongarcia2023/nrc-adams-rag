@@ -215,14 +215,16 @@ and verify the released state. Recheck current terms before another rental.
 ## CPU questions and live discovery
 
 The CPU-only Ollama adapter limits each generation prompt to 2,800 UTF-8 bytes
-of system instructions and JSON input, up to three source excerpts, and 384 output
+of system instructions and JSON input, up to three source excerpts, and 320 output
 tokens. It records the exact excerpt ranges used. This is a bounded reading
 budget, not a promise that every relevant fact was supplied to the model.
 Retrieved full passages remain available in the answer's source list. CPU model
 requests stop after at most 240 seconds; evidence is retained on timeout.
 
 The UI distinguishes reading source context from drafting, shows elapsed time,
-and exposes sources before generation completes. Streamed model tokens remain
+and displays labeled source excerpts before generation completes. If generation
+fails validation or times out, those excerpts remain, explicitly marked as source
+text rather than a generated answer. Streamed model tokens remain
 private until the complete structured answer passes citation validation.
 
 Interactive questions read the last compatible published semantic index and
@@ -245,6 +247,11 @@ for their separate parts. Comparisons reserve evidence for both subjects or
 technical concepts. A bounded context can still omit important facts. In addition
 to citation validation, the CPU adapter rejects unfinished sentences and years
 absent from cited context; these checks do not verify entailment or correctness.
+The constrained CPU path asks for one short statement per source and assigns its
+citation in code. It does not let a statement borrow a citation from another
+passage. History, current-status and enumeration answers always disclose the
+limits of selected excerpts. This concise mode is a resource tradeoff, not a
+replacement for a capable synthesis model on a properly provisioned service.
 
 Set `NRC_LIVE_RETRIEVAL=1` in the private workspace environment to allow bounded
 NRC APS lookups for user questions. The default launcher remains offline. Live

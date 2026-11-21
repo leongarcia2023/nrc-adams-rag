@@ -71,6 +71,22 @@ class InteractiveTests(unittest.TestCase):
         self.assertIn(old['AccessionNumber'], calls)
         self.assertFalse(result['discovery']['cached'])
 
+    def test_source_excerpts_arrive_before_generation_and_survive_a_failure(self):
+        self.put()
+        seen = []
+        class Failed:
+            def generate(self, *args):
+                self_test.assertTrue(seen)
+                raise RuntimeError('Model timeout')
+        self_test = self
+        result = research(self.store, 'Why was the Oklo application denied?', live=False,
+                          engine=Failed(), interactive=True, evidence_ready=lambda r: seen.append(r))
+        self.assertEqual(seen[0]['answer_kind'], 'source_excerpts')
+        self.assertIn('without prejudice', seen[0]['answer'])
+        self.assertEqual(result['mode'], 'evidence_only')
+        self.assertIn('generated answer was not available', result['answer'])
+        self.assertTrue(result['insufficient_evidence'])
+
     def test_current_status_discovery_uses_checked_added_windows_and_newest_named_record(self):
         import datetime as dt
         from adams_rag.research import search_live, fallback_queries
@@ -212,6 +228,20 @@ class InteractiveTests(unittest.TestCase):
                     'Why did the valve fail?':'explanation'}
         for question, kind in examples.items():
             self.assertEqual(inquiry_kind(question), kind)
+
+    def test_cpu_statements_keep_their_assigned_sources_and_disclose_history_limits(self):
+        from adams_rag.cpu_context import notes_answer, notes_schema
+        data = {'question': 'What is the licensing history?', 'sources': [{'source_id': 1}, {'source_id': 3}]}
+        raw = {'notes': {'1': 'The application was accepted for review.', '3': 'The application was later denied without prejudice.'}, 'gap': ''}
+        result = notes_answer(raw, data)
+        self.assertEqual([p['source_ids'] for p in result['paragraphs']], [[1], [3]])
+        self.assertTrue(result['insufficient_evidence'])
+        self.assertIn('not a complete', result['gaps'][0])
+        self.assertEqual(notes_schema({1, 3})['properties']['notes']['required'], ['1', '3'])
+        for bad in ({'notes': {'1': 'Missing second source.'}, 'gap': ''},
+                    {'notes': {'1': 'Claim.', '2': 'Invented source.', '3': ''}, 'gap': ''}):
+            with self.assertRaisesRegex(ValueError, 'each supplied source'):
+                notes_answer(bad, data)
 
     def test_named_document_retrieval_answers_followup_from_body(self):
         from adams_rag.query_terms import question_facets

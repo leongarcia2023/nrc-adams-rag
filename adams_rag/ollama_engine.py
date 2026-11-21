@@ -42,6 +42,7 @@ class OllamaEngine(MLXEngine):
         self.lock = threading.RLock()
         self.progress = None
         self.last_metrics = None
+        self.last_response = None
 
     def _post(self, path, payload, timeout=None):
         # Direct loopback connection: no environment proxies or redirects.
@@ -126,8 +127,9 @@ class OllamaEngine(MLXEngine):
                 options["num_gpu"] = 0
             response_format = 'json'
             if self.cpu_only and isinstance(data, dict) and data.get('sources'):
-                from .cpu_context import answer_schema
-                response_format = answer_schema({s['source_id'] for s in data['sources']})
+                from .cpu_context import answer_schema, notes_schema
+                schema = notes_schema if data.get('answer_style') == 'source_notes' else answer_schema
+                response_format = schema({s['source_id'] for s in data['sources']})
             response = self._post("/api/chat", {
                 "model": self.model, "stream": True, "format": response_format, "keep_alive": self.keep_alive,
                 "options": options,
@@ -146,10 +148,12 @@ class OllamaEngine(MLXEngine):
     def generate(self, model, question, evidence):
         if not self.cpu_only:
             return super().generate(model, question, evidence)
-        from .cpu_context import pack_compact
+        from .cpu_context import pack_compact, notes_answer
+        self.last_response = None
         system, data, context = pack_compact(question, evidence)
-        result = self.complete(system, data, max_tokens=min(self.max_tokens, 384))
-        answer = assemble_answer(result, len(evidence))
+        result = self.complete(system, data, max_tokens=min(self.max_tokens, 320))
+        self.last_response = result
+        answer = assemble_answer(notes_answer(result, data), len(evidence))
         supplied = {s['source_id'] for s in data['sources']}
         if any(c not in supplied for claim in answer['claims'] for c in claim['source_ids']):
             raise ValueError('The model cited a passage outside its reading budget; answer withheld')

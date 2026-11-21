@@ -30,10 +30,11 @@ def run(db, directory, questions, output, *, model=None, catalog=None):
     store = Store(db)
     index = search_index(store, directory)
     index.read_only = True
-    engine = OllamaEngine(model, cpu_only=True, num_threads=2, timeout=180,
+    engine = OllamaEngine(model, cpu_only=True, num_threads=2, timeout=240,
                           storage_path=Path(db).parent, keep_alive=600) if model else None
     report = {'started_utc': dt.datetime.now(dt.timezone.utc).isoformat(), 'live_discovery': False,
-              'model': model, 'cases': [], 'state': 'running', 'human_quality_review_required': True}
+              'model': model, 'request_timeout_seconds': 240 if model else None,
+              'cases': [], 'state': 'running', 'human_quality_review_required': True}
     def save():
         temporary = output.with_suffix(output.suffix + '.tmp')
         temporary.write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
@@ -42,6 +43,8 @@ def run(db, directory, questions, output, *, model=None, catalog=None):
     try:
         for item in questions:
             started = time.monotonic()
+            if engine:
+                engine.last_response = None
             try:
                 result = research(store, item['question'], engine=engine, semantic=index, catalog=catalog,
                                   live=False, generate=bool(model), interactive=True)
@@ -52,6 +55,7 @@ def run(db, directory, questions, output, *, model=None, catalog=None):
                          'insufficient_evidence': result.get('insufficient_evidence'), 'gaps': result.get('gaps'),
                          'timings': result['timings'], 'generation_metrics': result.get('generation_metrics'),
                          'generation_context': result.get('generation_context'),
+                         'unvalidated_model_output': getattr(engine, 'last_response', None),
                          'source_accessions': [s['accession'] for s in result['sources']],
                          'source_input': context, 'warnings': result['warnings']}
             except Exception as error:
