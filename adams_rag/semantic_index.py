@@ -296,7 +296,7 @@ class SemanticIndex:
         self.index, self.generation = index, generation
 
     def search(self, question, limit=40, docket=None, date_from=None, date_to=None):
-        if not self.status()["vectors"]:
+        if not self.store.db.execute('SELECT 1 FROM dense_vectors WHERE model=? LIMIT 1', (self.model,)).fetchone():
             return []
         vector = next(iter(self._encoder().query_embed(question)))
         return self.search_vector(vector, limit, docket, date_from, date_to)
@@ -305,7 +305,7 @@ class SemanticIndex:
         """Reuse one query embedding across compatible semantic candidate indexes."""
         import numpy as np
         from usearch.index import Index
-        if not self.status()["vectors"]:
+        if not self.store.db.execute('SELECT 1 FROM dense_vectors WHERE model=? LIMIT 1', (self.model,)).fetchone():
             return []
         generation = self.fingerprint()
         if self.generation != generation:

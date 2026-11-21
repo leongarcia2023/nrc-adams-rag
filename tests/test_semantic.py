@@ -43,7 +43,9 @@ class SemanticTests(unittest.TestCase):
         self.assertEqual(self.index.sync()["embedded"], 2)
         self.assertEqual(self.index.sync()["embedded"], 0)
         reopened = SemanticIndex(self.store, self.root / "index", "test-vectors", Encoder())
-        self.assertEqual(reopened.search("valve", 1)[0]["accession"], "A")
+        reopened.read_only = True
+        with patch.object(reopened, 'status', side_effect=AssertionError('Questions must not count every vector')):
+            self.assertEqual(reopened.search("valve", 1)[0]["accession"], "A")
 
     def test_priority_preserves_later_served_passages_before_fifo_and_then_continues(self):
         baseline = SemanticIndex(self.store, self.root / "index", "baseline", Encoder())
