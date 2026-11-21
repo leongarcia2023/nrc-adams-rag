@@ -258,6 +258,16 @@ keys and survive compaction. Temporary build space is not a durable backup: do
 not remove the active database until a verified replacement or recoverable backup
 exists on persistent storage. Stop all database users during the final switch.
 
+When there is no reliable space for a full copy, the reference conversion can
+also run with other writers stopped on the existing database, starting with
+`--max-documents 100 --batch-size 25`. Each committed batch preserves the full
+canonical sources; each document must pass exact comparison and readback before
+its duplicate text is removed. Failed checks retain the original chunk text.
+Resume without `--max-documents` after verifying that pilot. This makes space
+reusable inside SQLite; it does not itself shrink the database file. Filesystem
+free space and SQLite reusable pages must be reported separately. A host's free
+space reported for `/tmp` does not establish a workspace's ephemeral-storage quota.
+
 Application `Store` connections resolve both old text and compact references.
 Read-only tools that use raw SQLite must call
 `adams_rag.chunk_storage.install_reader(connection)` before consuming `text`

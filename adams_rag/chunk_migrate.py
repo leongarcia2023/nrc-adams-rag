@@ -78,7 +78,9 @@ def migrate(store, *, batch_size=100, max_documents=None, report=None):
         require_space(store.path.parent)
         state = dict(store.db.execute('SELECT * FROM chunk_migration WHERE id=1').fetchone())
         limit = batch_size if max_documents is None else min(batch_size, max_documents - done)
-        accessions = [r[0] for r in store.db.execute("SELECT accession FROM documents WHERE accession>? AND status='indexed' ORDER BY accession LIMIT ?", (state['last_accession'], limit))]
+        # Seek along the accession key. The status index otherwise makes SQLite
+        # scan and sort the entire indexed collection again for every batch.
+        accessions = [r[0] for r in store.db.execute("SELECT accession FROM documents INDEXED BY sqlite_autoindex_documents_1 WHERE accession>? AND status='indexed' ORDER BY accession LIMIT ?", (state['last_accession'], limit))]
         if not accessions:
             with store.db:
                 store.db.execute("UPDATE chunk_migration SET state='complete' WHERE id=1")
