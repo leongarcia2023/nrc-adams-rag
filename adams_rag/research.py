@@ -377,6 +377,14 @@ def research(store, question, *, engine=None, semantic=None, client=None, catalo
         warnings.extend(discovery["warnings"])
     elif live:
         warnings.append("ADAMS is not connected; this run searches only the local collection.")
+    if discovery and discovery['fetched']:
+        if progress:
+            progress('Checking source text', 'Validating the newly retrieved records')
+        try:
+            from .markdown_archive import prepare_fetched
+            discovery['markdown_checked'] = prepare_fetched(store, discovery['fetched'])
+        except (RuntimeError, ValueError, OSError) as error:
+            warnings.append(f'New records remain subject to the extraction holdout policy: {error}')
     if semantic and discovery and discovery["fetched"]:
         if progress:
             progress("Updating the semantic index", "Indexing newly read documents")

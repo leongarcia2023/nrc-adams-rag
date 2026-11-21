@@ -358,6 +358,33 @@ def saved_markdown(store, accession):
     return text
 
 
+def prepare_fetched(store, accessions):
+    """Validate newly fetched records before a strict collection retrieves them.
+
+    Follow the existing Markdown gate and holdout policy, without rescanning
+    the whole archive or enabling a different policy on a new collection.
+    """
+    if not gate_enabled(store.db):
+        return 0
+    directory = store.path.parent / 'markdown'
+    directory.mkdir(parents=True, exist_ok=True)
+    rows, paths = [], {}
+    for accession in dict.fromkeys(accessions):
+        row = store.db.execute('SELECT rowid,* FROM documents WHERE accession=?', (accession,)).fetchone()
+        if not row:
+            continue
+        check = store.db.execute('SELECT * FROM markdown_checks WHERE accession=?', (accession,)).fetchone()
+        if (check and check['policy'] == POLICY and check['text_hash'] == row['text_hash']
+                and check['metadata_hash'] == digest(row['metadata'])):
+            continue
+        rows.append(row)
+        if re.fullmatch(r'ML[A-Z0-9]+', accession):
+            path = store.path.parent / 'recovery' / (accession + '.pdf')
+            if path.is_file():
+                paths[accession] = path
+    return export_batch(store, rows, directory, paths) if rows else 0
+
+
 def prune_reviewed_pdf(store, accession):
     """Remove one managed PDF only after rechecking every recorded page review.
 

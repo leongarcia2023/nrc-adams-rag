@@ -100,6 +100,26 @@ class CPUContextTests(unittest.TestCase):
             finally:
                 store.db.close()
 
+    def test_live_documents_are_validated_before_strict_markdown_retrieval(self):
+        from adams_rag.markdown_archive import setup, saved_markdown
+        with tempfile.TemporaryDirectory() as root:
+            store = Store(Path(root) / 'research.sqlite')
+            try:
+                setup(store.db)
+                with store.db:
+                    store.db.execute('UPDATE markdown_policy SET enabled=1 WHERE id=1')
+                class Client:
+                    def request(self, payload=None, accession=None):
+                        doc = {'AccessionNumber': 'ML26300A017', 'DocumentTitle': 'General Matter License Application',
+                               'content': 'The General Matter application was accepted for review. Acceptance is not license issuance.'}
+                        return {'document': doc} if accession else {'count': 1, 'results': [{'document': doc}]}
+                result = research(store, 'How far along is General Matter on their license?', client=Client(), generate=False)
+                self.assertEqual(result['sources'][0]['accession'], 'ML26300A017')
+                self.assertEqual(result['discovery']['markdown_checked'], 1)
+                self.assertIn('Acceptance is not license issuance.', saved_markdown(store, 'ML26300A017'))
+            finally:
+                store.db.close()
+
 
 if __name__ == '__main__':
     unittest.main()
