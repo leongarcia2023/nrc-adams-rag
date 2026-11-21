@@ -75,6 +75,14 @@ class CPUContextTests(unittest.TestCase):
                                'content': 'The General Matter license application is accepted for review. No license has been issued.'})
                 rows = hybrid_retrieve(store, 'How far along is General Matter on their license?')
                 self.assertEqual(rows[0]['accession'], 'LICENSE')
+                with store.db:
+                    store.put({'AccessionNumber': 'LICENSE', 'DocumentTitle': 'General Matter license application acceptance',
+                               'content': 'The application is accepted for detailed review; it is not an issued license. '
+                                          + 'Procedural background and review scope. ' * 250
+                                          + '\n\nDISTRIBUTION: General Matter license application acceptance.'})
+                rows = hybrid_retrieve(store, 'How far along is General Matter on their license?', focus=['LICENSE'])
+                self.assertEqual(rows[0]['ordinal'], 1)
+                self.assertIn('not an issued license', rows[0]['text'])
             finally:
                 store.db.close()
 

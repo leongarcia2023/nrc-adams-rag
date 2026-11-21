@@ -189,6 +189,13 @@ def rank_candidates(store, question, semantic=None, docket=None, date_from=None,
         for row in store.opening_chunks(direct, docket, date_from, date_to):
             by_id[row["id"]] = row
             scores[row["id"]] = scores.get(row["id"], 0) + .04
+    if phrases and focus and re.search(r'\b(status|progress|licens\w*|latest|current)\b|how far', question, re.I):
+        # Short distribution sheets can beat a longer decision letter in BM25
+        # because the same title is repeated on every chunk. Retain the opening
+        # of freshly discovered records for status questions.
+        for row in store.opening_chunks(focus, docket, date_from, date_to):
+            by_id[row['id']] = row
+            scores[row['id']] = scores.get(row['id'], 0) + .04
     for key, row in by_id.items():
         if row["accession"].upper() in direct:
             scores[key] += .1

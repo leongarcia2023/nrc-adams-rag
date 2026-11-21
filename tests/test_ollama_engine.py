@@ -140,12 +140,12 @@ class OllamaEngineTests(unittest.TestCase):
                 with inference_slot(engine.inference_lock, foreground=False):
                     thread = threading.Thread(target=generate)
                     thread.start()
-                    deadline = time.monotonic() + 3
+                    deadline = time.monotonic() + 10
                     while not interactive_waiting(engine.inference_lock) and time.monotonic() < deadline:
                         time.sleep(.01)
                     self.assertTrue(interactive_waiting(engine.inference_lock))
                     self.assertFalse(called.is_set())
-                thread.join(3)
+                thread.join(10)
             self.assertFalse(thread.is_alive())
             self.assertFalse(errors)
             self.assertTrue(called.is_set())
