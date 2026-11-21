@@ -31,7 +31,7 @@ class OllamaEngineTests(unittest.TestCase):
         payload = post.call_args.args[1]
         self.assertEqual(payload['model'], 'test-local-model')
         self.assertEqual(payload['format'], 'json')
-        self.assertFalse(payload['stream'])
+        self.assertTrue(payload['stream'])
         self.assertIn('untrusted source data', payload['messages'][0]['content'])
         self.assertIn('DEMO', payload['messages'][1]['content'])
 
@@ -182,3 +182,32 @@ class OllamaEngineTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
             thread.join()
+
+    def test_stream_reports_writing_only_after_content_and_retains_metrics(self):
+        fragments = ['{"paragraphs":', '[{"text":"The pump leaked.","source_ids":[1]}],',
+                     '"insufficient_evidence":false,"gaps":[]}']
+        events = []
+        class Handler(BaseHTTPRequestHandler):
+            protocol_version = 'HTTP/1.1'
+            def log_message(self, *args): pass
+            def do_POST(self):
+                json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+                if self.path == '/api/show':
+                    body = b'{}'
+                else:
+                    items = [{'message': {'content': s}, 'done': False} for s in fragments]
+                    items.append({'done': True, 'done_reason': 'stop', 'prompt_eval_count': 100,
+                                  'eval_count': 25, 'message': {'content': ''}})
+                    body = b''.join(json.dumps(item).encode() + b'\n' for item in items)
+                self.send_response(200); self.send_header('Content-Length', str(len(body))); self.end_headers()
+                self.wfile.write(body)
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+        try:
+            engine = OllamaEngine('test', f'http://127.0.0.1:{server.server_port}', cpu_only=True)
+            result = engine.generate_with_progress('What happened?', self.evidence, lambda s,d: events.append(s))
+            self.assertEqual(events, ['Reading source context', 'Drafting cited answer'])
+            self.assertEqual(result['answer'], 'The pump leaked. [1]')
+            self.assertEqual(result['generation_metrics']['prompt_eval_count'], 100)
+        finally:
+            server.shutdown(); server.server_close(); thread.join()

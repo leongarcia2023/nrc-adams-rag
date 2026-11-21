@@ -8,6 +8,7 @@ import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import threading
+import time
 import uuid
 from urllib.parse import parse_qs, urlsplit
 
@@ -121,7 +122,8 @@ class Application:
             if active >= self.max_queued + 1:
                 raise RuntimeError("A research run is already active. Wait for it to finish before submitting another.")
             job_id = str(uuid.uuid4())
-            self.jobs[job_id] = {"id": job_id, "state": "queued", "stage": "Queued", "detail": ""}
+            self.jobs[job_id] = {"id": job_id, "state": "queued", "stage": "Queued", "detail": "",
+                                 "created_at": time.time()}
             for old_id in list(self.jobs):
                 if len(self.jobs) <= 30:
                     break
@@ -137,7 +139,15 @@ class Application:
         store, rate, transport = None, None, None
         def progress(stage, detail):
             with self.lock:
-                self.jobs[job_id].update(state="running", stage=stage, detail=detail)
+                job = self.jobs[job_id]
+                if job['stage'] != stage:
+                    job['stage_started_at'] = time.time()
+                job.update(state="running", stage=stage, detail=detail)
+        def evidence_ready(result):
+            with self.lock:
+                # Snapshot before generation mutates the result. Partial model
+                # tokens are never published as a validated answer.
+                self.jobs[job_id]['preview'] = json.loads(json.dumps(result))
         try:
             progress("Starting retrieval", "Preparing the local collection")
             if self.engine is None and model_ready(self.model_path):
@@ -154,11 +164,13 @@ class Application:
                 client = AdamsClient(rate, key, max_requests=30, rps=2, daily_limit=90000,
                                      opener=transport, include_search_content=False)
             result = research(store, engine=self.engine, semantic=semantic, client=client,
-                              catalog=self.catalog, generate=generate, progress=progress, **payload)
+                              catalog=self.catalog, generate=generate, progress=progress,
+                              evidence_ready=evidence_ready, **payload)
             self.encoder = semantic.encoder
             self.encoder_model = semantic.model
             with self.lock:
                 self.jobs[job_id].update(state="finished", stage="Finished", detail="", result=result)
+                self.jobs[job_id].pop('preview', None)
         except Exception as error:
             # Expected errors have user-facing messages. Unknown dependency failures
             # expose only their class, never arbitrary exception bodies/credentials.

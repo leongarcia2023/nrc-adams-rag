@@ -212,3 +212,24 @@ At the observed price, an eight-GPU AMD node costs $24 per hour. Billing ends on
 when the lease ends; stopping a model process or closing SSH does not end it.
 The platform offered no automatic spending cap. Explicitly release through Marshall
 and verify the released state. Recheck current terms before another rental.
+# CPU questions and live discovery
+
+The CPU-only Ollama adapter limits each generation prompt to 6,000 UTF-8 bytes
+of system instructions and JSON input, four source excerpts, and 384 output
+tokens. It records the exact excerpt ranges used. This is a bounded reading
+budget, not a promise that every relevant fact was supplied to the model.
+Retrieved full passages remain available in the answer's source list. CPU model
+requests stop after at most 240 seconds; evidence is retained on timeout.
+
+The UI distinguishes reading source context from drafting, shows elapsed time,
+and exposes sources before generation completes. Streamed model tokens remain
+private until the complete structured answer passes citation validation.
+
+Set `NRC_LIVE_RETRIEVAL=1` in the private workspace environment to allow bounded
+NRC APS lookups for user questions. The default launcher remains offline. Live
+requests use the existing private NRC key and shared rate database, with at most
+30 API requests per question. Ordinary title-cased multiword names and quoted
+phrases remain phrase anchors; an absent company name is not relaxed into common
+individual words. Live discovery is still bounded, so an answer must distinguish
+a dated application milestone from current license issuance.
+

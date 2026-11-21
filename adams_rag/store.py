@@ -417,7 +417,9 @@ class Store:
         return " OR ".join('"' + t + '"' for t in tokens)
 
     def lexical(self, question, limit=30, docket=None, date_from=None, date_to=None):
-        expression = self._fts_expression(question)
+        from .query_terms import subject_phrases, phrase_expression
+        phrases = subject_phrases(question) if not re.search(r'\bML\d{5}[A-Z0-9]\d{3}\b', question, re.I) else []
+        expression = phrase_expression(phrases) if phrases else self._fts_expression(question)
         if not expression:
             return []
         where, filters = self._retrieval_filters(docket, date_from, date_to)

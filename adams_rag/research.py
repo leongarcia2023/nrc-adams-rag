@@ -20,6 +20,10 @@ STOP = set("a an the what which where when how why are is was were did does do t
 
 
 def fallback_queries(question):
+    from .query_terms import subject_phrases, phrase_expression
+    phrases = subject_phrases(question)
+    if phrases:
+        return [phrase_expression(phrases)]
     tokens = list(dict.fromkeys(t for t in re.findall(r"[A-Za-z0-9][A-Za-z0-9.-]*", question) if t.lower() not in STOP))
     return [" ".join(tokens[:12])] if tokens else []
 
@@ -194,8 +198,14 @@ def rank_candidates(store, question, semantic=None, docket=None, date_from=None,
         # Preserve the previous fused order when the adjustment creates a tie.
         order.sort(key=scores.get, reverse=True)
     from .extraction_review import filter_rows
-    return filter_rows(store.db, [{**by_id[key], "retrieval_score": scores[key]}
-                                  for key in order], exclusions)
+    rows = [{**by_id[key], "retrieval_score": scores[key]} for key in order]
+    from .query_terms import subject_phrases, contains_subject
+    phrases = subject_phrases(question) if not direct else []
+    if phrases:
+        # A semantic neighbor about a different company is not evidence about
+        # the named subject. Never silently relax a missing name into OR words.
+        rows = [r for r in rows if contains_subject(r['title'] + '\n' + r['text'], phrases)]
+    return filter_rows(store.db, rows, exclusions)
 
 
 def hybrid_retrieve(store, question, semantic=None, top_k=10, docket=None, date_from=None, date_to=None, focus=None,
@@ -304,7 +314,7 @@ def catalog_coverage(path):
 
 def research(store, question, *, engine=None, semantic=None, client=None, catalog=None,
              live=True, docket=None, date_from=None, date_to=None, top_k=10, max_documents=8,
-             generate=True, progress=None):
+             generate=True, progress=None, evidence_ready=None):
     if not isinstance(question, str) or not 1 <= len(question.strip()) <= 2000:
         raise ValueError("Enter a question between 1 and 2,000 characters")
     if not 1 <= top_k <= 20 or not 1 <= max_documents <= 20:
@@ -334,7 +344,9 @@ def research(store, question, *, engine=None, semantic=None, client=None, catalo
             resolved_accessions = list(dict.fromkeys(resolved_accessions))
             scope = set(resolved_accessions) | {a.upper() for a in ACCESSION.findall(question)}
             scope.update(key for r in legacy_resolutions for key in r["legacy_source_keys"])
-    if engine and live and not ACCESSION.search(question) and not legacy_resolutions:
+    from .query_terms import subject_phrases
+    if (engine and live and not ACCESSION.search(question) and not legacy_resolutions
+            and not subject_phrases(question) and not getattr(engine, 'cpu_only', False)):
         if progress:
             progress("Planning retrieval", "Identifying search terms and alternative wording")
         try:
@@ -397,13 +409,23 @@ def research(store, question, *, engine=None, semantic=None, client=None, catalo
         result["source_scope"] = "Named legacy records, explicit NRC NUDOCS report references, and named main-library accessions"
     if ACCESSION.search(question):
         result.setdefault("source_scope", "Named accessions and fetched package members")
+    from .query_terms import subject_phrases
+    if not ACCESSION.search(question) and subject_phrases(question):
+        result['subject_phrases'] = subject_phrases(question)
+    if not live:
+        warnings.append('This run searched the downloaded collection only; current NRC updates were not checked.')
+    if evidence_ready:
+        evidence_ready(result)
     if not evidence:
         result.update(answer="No supporting passages were found in this bounded retrieval. This does not establish that ADAMS has no answer.", insufficient_evidence=True)
     elif generate and engine:
         if progress:
             progress("Generating a cited answer", "The answer model is reading the retrieved passages")
         try:
-            result.update(engine.generate(None, question, evidence), mode="generated",
+            generate_call = getattr(engine, 'generate_with_progress', None)
+            answer = (generate_call(question, evidence, progress) if callable(generate_call)
+                      else engine.generate(None, question, evidence))
+            result.update(answer, mode="generated",
                           citation_check="citation_identifiers_validated; entailment_not_verified")
         except (ValueError, RuntimeError, KeyError, OSError) as error:
             warnings.append(f"Generated answer withheld: {error}")

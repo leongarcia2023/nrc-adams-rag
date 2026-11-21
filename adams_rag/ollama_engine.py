@@ -5,9 +5,10 @@ import json
 import os
 from pathlib import Path
 import threading
+import time
 from urllib.parse import urlsplit
 
-from .models import MLXEngine, decode_object, model_ready
+from .models import MLXEngine, decode_object, model_ready, assemble_answer
 from .inference_guard import inference_slot
 
 
@@ -39,16 +40,47 @@ class OllamaEngine(MLXEngine):
         self.keep_alive, self.cpu_only = keep_alive, cpu_only
         self.inference_lock = Path(storage_path) / 'models' / 'inference.lock' if storage_path else None
         self.lock = threading.RLock()
+        self.progress = None
+        self.last_metrics = None
 
     def _post(self, path, payload, timeout=None):
         # Direct loopback connection: no environment proxies or redirects.
         conn = http.client.HTTPConnection(self.host, self.port, timeout=timeout or self.timeout)
+        deadline = time.monotonic() + (timeout or self.timeout)
         try:
             conn.request("POST", path, body=json.dumps(payload).encode(),
                          headers={"Content-Type": "application/json"})
+            request_socket = conn.sock
             response = conn.getresponse()
             if response.status != 200:
                 raise RuntimeError("Local Ollama request failed; check the server and installed model")
+            if payload.get('stream'):
+                parts, size, announced = [], 0, False
+                while True:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise TimeoutError()
+                    if request_socket:
+                        request_socket.settimeout(remaining)
+                    line = response.readline(1024 * 1024 + 1)
+                    size += len(line)
+                    if not line or size > 4 * 1024 * 1024:
+                        raise ValueError('Local model stream ended without a complete answer')
+                    if time.monotonic() > deadline:
+                        raise TimeoutError()
+                    item = json.loads(line)
+                    if not isinstance(item, dict) or item.get('error'):
+                        raise ValueError('Local model returned an invalid stream')
+                    content = item.get('message', {}).get('content', '')
+                    if not isinstance(content, str):
+                        raise ValueError('Local model returned invalid text')
+                    if content:
+                        parts.append(content)
+                        if self.progress and not announced:
+                            self.progress('Drafting cited answer', 'The model has finished reading and is drafting the answer')
+                            announced = True
+                    if item.get('done'):
+                        return {**item, 'message': {'content': ''.join(parts)}}
             raw = response.read(4 * 1024 * 1024 + 1)
             if len(raw) > 4 * 1024 * 1024:
                 raise ValueError("Local Ollama response exceeded the size limit")
@@ -57,7 +89,7 @@ class OllamaEngine(MLXEngine):
                 raise ValueError("Local Ollama returned an invalid object")
             return value
         except TimeoutError:
-            raise RuntimeError("Local Ollama exceeded its request timeout; reduce model size or increase ADAMS_OLLAMA_TIMEOUT") from None
+            raise RuntimeError("Local Ollama exceeded its request timeout; the retrieved sources remain available. A faster model service is needed for this request.") from None
         except (OSError, http.client.HTTPException):
             raise RuntimeError("Cannot reach local Ollama; start it and install the requested model") from None
         finally:
@@ -76,7 +108,8 @@ class OllamaEngine(MLXEngine):
         return {"state": "ready", "backend": "ollama", "model": self.model,
                 "execution": "local_ollama", "resources_managed_by": "ollama",
                 "cpu_only": self.cpu_only, "num_threads": self.num_threads,
-                "keep_alive_seconds": self.keep_alive}
+                "keep_alive_seconds": self.keep_alive, "request_timeout_seconds": self.timeout,
+                "context_byte_limit": 6000 if self.cpu_only else None}
 
     def complete(self, system, data, max_tokens=None):
         tokens = self.max_tokens if max_tokens is None else max_tokens
@@ -84,23 +117,49 @@ class OllamaEngine(MLXEngine):
             raise ValueError("Use a model token allowance between 1 and 4,096")
         with self.lock, (inference_slot(self.inference_lock) if self.inference_lock else nullcontext()):
             self._check_model()
-            options = {"temperature": 0, "num_predict": tokens, "num_ctx": 16384}
+            if self.progress:
+                self.progress('Reading source context', 'The CPU model is reading the selected excerpts; this can take a few minutes')
+            options = {"temperature": 0, "num_predict": tokens, "num_ctx": 4096 if self.cpu_only else 16384}
             if self.num_threads is not None:
                 options["num_thread"] = self.num_threads
             if self.cpu_only:
                 options["num_gpu"] = 0
             response = self._post("/api/chat", {
-                "model": self.model, "stream": False, "format": "json", "keep_alive": self.keep_alive,
+                "model": self.model, "stream": True, "format": "json", "keep_alive": self.keep_alive,
                 "options": options,
                 "messages": [{"role": "system", "content": system},
-                             {"role": "user", "content": json.dumps(data)}],
+                             {"role": "user", "content": json.dumps(data, ensure_ascii=False)}],
             })
+            self.last_metrics = {k: response[k] for k in ('total_duration', 'load_duration', 'prompt_eval_count',
+                'prompt_eval_duration', 'eval_count', 'eval_duration') if k in response}
         if response.get("done") is not True or response.get("done_reason") == "length":
             raise ValueError("The local model did not finish its answer; answer withheld")
         message = response.get("message")
         if not isinstance(message, dict) or not isinstance(message.get("content"), str):
             raise ValueError("Local Ollama did not return a text response")
         return decode_object(message["content"])
+
+    def generate(self, model, question, evidence):
+        if not self.cpu_only:
+            return super().generate(model, question, evidence)
+        from .cpu_context import pack
+        system, data, context = pack(question, evidence)
+        result = self.complete(system, data, max_tokens=min(self.max_tokens, 384))
+        answer = assemble_answer(result, len(evidence))
+        supplied = {s['source_id'] for s in data['sources']}
+        if any(c not in supplied for claim in answer['claims'] for c in claim['source_ids']):
+            raise ValueError('The model cited a passage outside its reading budget; answer withheld')
+        answer['generation_context'] = context
+        answer['generation_metrics'] = self.last_metrics
+        return answer
+
+    def generate_with_progress(self, question, evidence, progress):
+        with self.lock:
+            self.progress = progress
+            try:
+                return self.generate(None, question, evidence)
+            finally:
+                self.progress = None
 
 
 def make_engine(model_path, storage_path=None, ollama_model=None):
@@ -117,7 +176,8 @@ def make_engine(model_path, storage_path=None, ollama_model=None):
             raise ValueError("ADAMS_OLLAMA_CPU_ONLY must be 0 or 1")
         return OllamaEngine(ollama_model,
                             base_url=os.environ.get("ADAMS_OLLAMA_URL", "http://127.0.0.1:11434"),
-                            timeout=int(os.environ.get("ADAMS_OLLAMA_TIMEOUT", "300")),
+                            timeout=min(int(os.environ.get("ADAMS_OLLAMA_TIMEOUT", "300")), 240) if cpu_only == '1'
+                                else int(os.environ.get("ADAMS_OLLAMA_TIMEOUT", "300")),
                             num_threads=int(threads) if threads else None,
                             storage_path=storage_path,
                             keep_alive=int(os.environ.get("ADAMS_OLLAMA_KEEP_ALIVE_SECONDS", "0")),

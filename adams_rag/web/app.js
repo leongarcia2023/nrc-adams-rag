@@ -102,8 +102,8 @@ function safeLink(label, url) {
   try { const parsed = new URL(url); if (parsed.protocol === 'https:') { link.href = parsed.href; link.target = '_blank'; link.rel = 'noopener noreferrer'; } } catch {}
   return link;
 }
-async function render(result) {
-  current = result;
+async function render(result, preview = false) {
+  if (!preview) current = result;
   const sources = Array.isArray(result.sources) ? result.sources : [];
   const citations = new Set(sources.map(source => Number(source.citation)));
   $('answer').replaceChildren(); $('sources').replaceChildren(); $('search-notes').replaceChildren();
@@ -111,16 +111,20 @@ async function render(result) {
   $('source-details').hidden = !sources.length;
   $('source-summary').textContent = 'Sources · ' + sources.length;
   if (result.answer) renderAnswer(result.answer, citations);
-  else {
+  else if (preview) {
+    $('answer').append(node('p', 'The matching sources are ready below while the answer is being prepared.'));
+  } else {
     let message = 'I found relevant records, but could not generate an answer. You can read the sources below and try again.';
-    if ((result.warnings || []).some(w => /headroom|storage pause/i.test(w))) {
-      message = 'I found relevant records, but this Mac needs more free space to generate an answer. You can read the sources below.';
+    if ((result.warnings || []).some(w => /exceeded its request timeout/i.test(w))) {
+      message = 'The answer took too long on this server. The matching sources are available below.';
+    } else if ((result.warnings || []).some(w => /generation paused for disk headroom/i.test(w))) {
+      message = 'I found relevant records, but this server needs more free space to generate an answer. You can read the sources below.';
       try {
         const status = await api('/api/status');
         const g = status.generation;
         if (g?.state === 'headroom_needed') {
           const extra = Math.max(0, (g.required_free_bytes - g.free_bytes) / 1e9);
-          message = `I found relevant records, but this Mac needs about ${extra.toFixed(1)} GB more free space to generate an answer. You can read the sources below.`;
+          message = `I found relevant records, but this server needs about ${extra.toFixed(1)} GB more free space to generate an answer. You can read the sources below.`;
         }
       } catch {}
     } else if ((result.warnings || []).some(w => /model is not ready/i.test(w))) message = 'The answer model is not ready yet. You can read the matching sources below.';
@@ -147,20 +151,27 @@ async function render(result) {
   $('search-notes').append(node('p', 'This search covers part of the NRC archive. It cannot establish that every relevant document was found.'));
   for (const warning of [...new Set([...(result.gaps || []), ...(result.warnings || [])])]) $('search-notes').append(node('p', warning));
   $('result').hidden = false;
+  if (preview) return;
   $('result').focus({preventScroll:true});
   const url = new URL(location.href); url.searchParams.set('run', result.id); url.hash = ''; history.replaceState(null, '', url);
 }
 function stageLabel(stage) {
-  if (/generat/i.test(stage)) return 'Writing your answer…';
+  if (/queued/i.test(stage)) return 'Waiting for the previous question…';
+  if (/reading source context|generat/i.test(stage)) return 'The model is reading the selected sources…';
+  if (/drafting/i.test(stage)) return 'Writing your answer…';
   if (/retriev|evidence|semantic/i.test(stage)) return 'Reading the matching records…';
   if (/search|ADAMS|discover|fetch/i.test(stage)) return 'Searching the NRC records…';
   return 'Reading the records…';
 }
 async function follow(job) {
+  let previewShown = false;
   while (true) {
     const state = await api('/api/jobs/' + encodeURIComponent(job.id));
-    $('stage').textContent = stageLabel(state.stage || '');
-    if (state.state === 'failed') { remember(null); throw new Error('The answer could not be completed. Please try again.'); }
+    const elapsed = state.created_at ? Math.max(0, Math.floor(Date.now() / 1000 - state.created_at)) : 0;
+    const duration = elapsed >= 60 ? ` · ${Math.floor(elapsed / 60)}m ${elapsed % 60}s` : elapsed ? ` · ${elapsed}s` : '';
+    $('stage').textContent = stageLabel(state.stage || '') + duration;
+    if (state.preview && !previewShown) { await render(state.preview, true); previewShown = true; }
+    if (state.state === 'failed') { remember(null); throw new Error(state.detail || 'The answer could not be completed. Please try again.'); }
     if (state.state === 'finished') { await render(state.result); remember(null); return; }
     await new Promise(resolve => setTimeout(resolve, 1200));
   }

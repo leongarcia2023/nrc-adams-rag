@@ -33,12 +33,18 @@ case "${1:-web}" in
   web)
     : "${NRC_PUBLIC_ORIGIN:?Set the exact authenticated workspace HTTPS origin}"
     : "${NRC_BASE_PATH:?Set the authenticated workspace port path, including trailing slash}"
+    live_args=(--offline-only)
+    case "${NRC_LIVE_RETRIEVAL:-0}" in
+      0) ;;
+      1) live_args=() ;;
+      *) echo 'NRC_LIVE_RETRIEVAL must be 0 or 1.' >&2; exit 1 ;;
+    esac
     exec "$python_bin" -m adams_rag.server \
       --db "$data_dir/research.sqlite" --rate-db "$data_dir/adams.sqlite" \
       --catalog "$catalog_db" --index-dir "$data_dir/index-cpu" \
       --ollama-model "${NRC_MODEL:-qwen3:4b-instruct-2507-q4_K_M}" \
       --public-origin "$NRC_PUBLIC_ORIGIN" --base-path "$NRC_BASE_PATH" \
-      --offline-only --max-queued "${NRC_MAX_QUEUED:-8}"
+      "${live_args[@]}" --max-queued "${NRC_MAX_QUEUED:-8}"
     ;;
   download)
     [[ -n "${ADAMS_API_KEY_FILE:-}" || -n "${ADAMS_API_KEY:-}" ]] || {
