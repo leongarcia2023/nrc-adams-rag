@@ -2,6 +2,7 @@
 import re
 
 QUESTION_WORDS = set('a an the what which where when how why is are was were does do did can could would should tell me show explain summarize compare and or with for of on in at their its about latest current far along to get attempting please history timeline overview give describe has have had happens happened difference differences between versus vs list find all any information documents records document record there this that these those from into regarding want know looking understand'.split())
+QUESTION_WORDS.update('nrc adams database under according pursuant'.split())
 
 LICENSING = re.compile(r'\b(?:licens\w*|permit\w*)\b', re.I)
 HISTORY = re.compile(r'\b(?:history|historical|timeline|chronolog\w*|over time)\b', re.I)
@@ -105,7 +106,7 @@ def subject_phrases(question):
     # A single proper name in a normal sentence is also an anchor. Do not
     # mistake question headings or technical acronyms for company names.
     covered = {w.casefold() for p in explicit + names for w in p.split()}
-    generic = QUESTION_WORDS | set('nrc adams reactor reactors nuclear licensing license permits permit safety application regulatory status progress requirements regulations'.split())
+    generic = QUESTION_WORDS | set('nrc adams reactor reactors nuclear licensing license permits permit safety application regulatory status progress requirements regulations january february march april may june july august september october november december'.split())
     for match in re.finditer(r'\b[A-Z][a-zA-Z0-9-]*\b', question):
         word = match.group()
         if (word.casefold() not in generic | covered and not word.isupper()

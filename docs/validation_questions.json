@@ -1,0 +1,10 @@
+[
+  {"id":"licensing-history","question":"What is the history of Oklo attempting to get permits for their reactor?"},
+  {"id":"named-document","question":"Summarize ML21357A034. Why did the NRC deny the application, and could the company reapply?"},
+  {"id":"current-status","question":"How far along is General Matter on their license?"},
+  {"id":"regulatory-requirement","question":"Under 10 CFR 50.59, when is a license amendment required?"},
+  {"id":"process-comparison","question":"How does a construction permit differ from an operating license?"},
+  {"id":"company-comparison","question":"Compare the licensing application reviews for Oklo and General Matter."},
+  {"id":"missing-evidence","question":"Has the NRC granted a commercial reactor license to Acme Unobtainium Power?"},
+  {"id":"archive-count","question":"How many reactor license applications has the NRC denied in total?"}
+]
