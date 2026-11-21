@@ -603,6 +603,18 @@ def research(store, question, *, engine=None, semantic=None, client=None, catalo
                       'The retrieved records are examples, not a complete count.',
                       insufficient_evidence=True, answer_kind='coverage_limit',
                       gaps=['A verified complete set of matching records is required to calculate this total.'])
+    elif (interactive and generate and preview and getattr(engine, 'cpu_only', False)
+          and result['inquiry_kind'] in {'status', 'requirements', 'comparison'}):
+        # Real-corpus evaluation found date/event confusion and unsupported
+        # regulatory/comparative synthesis in the installed small CPU model.
+        # Return source text promptly instead of spending minutes on that known
+        # failure mode. More capable, separately configured backends still use
+        # the generation path; never silently rent compute or change providers.
+        result.update(answer=preview, answer_kind='source_excerpts', insufficient_evidence=True,
+                      generation_policy='extractive_cpu_fallback',
+                      gaps=['These selected excerpts do not establish a complete answer or current applicability.'])
+        warnings.append('This CPU deployment returns exact source excerpts for status, requirements and comparisons; '
+                        'generated synthesis for these question types requires a more capable model configuration.')
     elif generate and engine:
         if progress:
             progress("Generating a cited answer", "The answer model is reading the retrieved passages")

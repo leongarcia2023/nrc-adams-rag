@@ -359,6 +359,24 @@ class InteractiveTests(unittest.TestCase):
         self.assertEqual(result['mode'], 'evidence_only')
         self.assertIn('not a complete count', result['answer'])
 
+    def test_cpu_status_requirements_and_comparison_use_exact_evidence_without_model_delay(self):
+        self.put('STATUS', 'Atlas license application acceptance',
+                 'The NRC completed its acceptance review. Sufficient information is available to proceed with a technical review.')
+        self.put('RULE', '10 CFR 50.59 guidance', 'Changes under 10 CFR 50.59 require evaluation against specified criteria.')
+        self.put('PERMIT', 'Construction permit', 'A construction permit authorizes construction. An operating license authorizes operation.')
+        class CPU:
+            cpu_only = True
+            def generate(self, *args):
+                raise AssertionError('Known unreliable CPU synthesis must not run')
+        for question in ['What is the current Atlas licensing status?', 'Under 10 CFR 50.59, what is required?',
+                         'How does a construction permit differ from an operating license?']:
+            result = research(self.store, question, engine=CPU(), live=False, interactive=True)
+            self.assertEqual(result['mode'], 'evidence_only')
+            self.assertEqual(result['generation_policy'], 'extractive_cpu_fallback')
+            self.assertEqual(result['answer_kind'], 'source_excerpts')
+            self.assertIn('Selected source excerpts:', result['answer'])
+            self.assertNotIn('generation_metrics', result)
+
     def test_section_header_does_not_replace_operative_text(self):
         text = '§ 50.23 Construction permits. A construction permit is issued before a license. Operation requires a separate authorization.'
         snippet, start, end = complete_excerpt(text, 'What is a construction permit?', 180)

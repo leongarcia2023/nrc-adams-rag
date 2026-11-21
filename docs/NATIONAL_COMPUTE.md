@@ -214,6 +214,15 @@ The platform offered no automatic spending cap. Explicitly release through Marsh
 and verify the released state. Recheck current terms before another rental.
 ## CPU questions and live discovery
 
+Current CPU deployment policy: status, regulatory requirements and comparison
+questions return exact, cited source excerpts without calling the small local
+model. Varied real-corpus tests found material date/event confusion, rule-scope
+errors and weak comparisons despite valid JSON and citations. This policy makes
+those responses faster and avoids publishing the observed synthesis failures;
+it does not turn excerpts into complete answers. Other question types retain
+bounded generation and validation. A separately configured, more capable backend
+can use generation for these types; no paid backend is provisioned automatically.
+
 The CPU-only Ollama adapter limits each generation prompt to 2,800 UTF-8 bytes
 of system instructions and JSON input, up to three source excerpts, and 320 output
 tokens. It records the exact excerpt ranges used. This is a bounded reading
