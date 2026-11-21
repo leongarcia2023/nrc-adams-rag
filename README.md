@@ -128,6 +128,10 @@ Open **http://127.0.0.1:8765/**. The server binds only to loopback and handles o
 research job at a time. See [API examples](docs/API.md) for using the same pipeline
 from another program.
 
+For CPU prompt limits, storage-paused retrieval, short-lived answer caching, and
+the repeatable varied-question benchmark, see
+[CPU evaluation and live discovery](docs/NATIONAL_COMPUTE.md#cpu-questions-and-live-discovery).
+
 On an Apple silicon Mac, the existing MLX path is also available:
 
 ```sh

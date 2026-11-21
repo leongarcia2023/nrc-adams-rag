@@ -196,8 +196,8 @@ class InteractiveTests(unittest.TestCase):
                     'document_date': f'{2020+i}-01-01', 'text': ('Header and distribution. ' * 50 +
                     'The NRC denied the Oklo application without prejudice. The company is free to reapply. ' + 'Other background. ' * 80)} for i in range(4)]
         system, data, audit = pack_compact('What is the history of Oklo permits?', sources)
-        self.assertLessEqual(audit['input_bytes'], 3400)
-        self.assertEqual(len(data['sources']), 4)
+        self.assertLessEqual(audit['input_bytes'], 2800)
+        self.assertEqual(len(data['sources']), 3)
         for item, span in zip(data['sources'], audit['source_spans']):
             self.assertIn('without prejudice', item['text'])
             original = sources[item['source_id'] - 1]['text']
@@ -236,8 +236,9 @@ class InteractiveTests(unittest.TestCase):
                 'By letter dated February 21, 2025, Atlas indicated its intention to submit a license application in two phases. '
                 'A readiness assessment was held in March 2025.\n\nDistribution copy.')
         source = {'citation': 1, 'accession': 'A', 'title': 'Atlas licensing audit', 'document_date': '2026-06-03', 'text': text}
-        _, data, _ = pack_compact('What is the history of Atlas licensing?', [source])
-        self.assertNotIn('document_date', data['sources'][0])
+        system, data, _ = pack_compact('What is the history of Atlas licensing?', [source])
+        self.assertEqual(data['sources'][0]['document_date'], '2026-06-03')
+        self.assertIn('publication, not necessarily the event date', system)
         snippet, start, end = complete_excerpt(text, 'history of Atlas licensing', 240)
         self.assertEqual(snippet, text[start:end])
         self.assertIn('February 21, 2025', snippet)

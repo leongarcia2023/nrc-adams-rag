@@ -212,10 +212,10 @@ At the observed price, an eight-GPU AMD node costs $24 per hour. Billing ends on
 when the lease ends; stopping a model process or closing SSH does not end it.
 The platform offered no automatic spending cap. Explicitly release through Marshall
 and verify the released state. Recheck current terms before another rental.
-# CPU questions and live discovery
+## CPU questions and live discovery
 
-The CPU-only Ollama adapter limits each generation prompt to 4,500 UTF-8 bytes
-of system instructions and JSON input, four source excerpts, and 384 output
+The CPU-only Ollama adapter limits each generation prompt to 2,800 UTF-8 bytes
+of system instructions and JSON input, up to three source excerpts, and 384 output
 tokens. It records the exact excerpt ranges used. This is a bounded reading
 budget, not a promise that every relevant fact was supplied to the model.
 Retrieved full passages remain available in the answer's source list. CPU model
@@ -225,6 +225,27 @@ The UI distinguishes reading source context from drafting, shows elapsed time,
 and exposes sources before generation completes. Streamed model tokens remain
 private until the complete structured answer passes citation validation.
 
+Interactive questions read the last compatible published semantic index and
+recheck candidate source versions. They do not rebuild the graph or create new
+embeddings. Text without vectors remains available to keyword search. This keeps
+retrieval usable when archive acquisition and indexing pause for storage; it does
+not imply complete semantic coverage. Coverage counters use a dated worker snapshot
+when available rather than scanning the whole database for every question.
+
+Successful answers may be reused for an identical request for 120 seconds, in a
+16-entry memory cache. Model, retrieval profile, filters and collection revision
+are part of the cache identity. Source updates and extraction-review changes
+invalidate cached answers. Live answers retain their original discovery time and
+warnings; a cache hit is not a new NRC check. Cold-query and cache-hit timings must
+be reported separately.
+
+Evidence selection distinguishes history, status, comparison, requirements,
+enumeration and document summaries. Named-document questions search passage bodies
+for their separate parts. Comparisons reserve evidence for both subjects or
+technical concepts. A bounded context can still omit important facts. In addition
+to citation validation, the CPU adapter rejects unfinished sentences and years
+absent from cited context; these checks do not verify entailment or correctness.
+
 Set `NRC_LIVE_RETRIEVAL=1` in the private workspace environment to allow bounded
 NRC APS lookups for user questions. The default launcher remains offline. Live
 requests use the existing private NRC key and shared rate database, with at most
@@ -232,6 +253,30 @@ requests use the existing private NRC key and shared rate database, with at most
 phrases remain phrase anchors; an absent company name is not relaxed into common
 individual words. Live discovery is still bounded, so an answer must distinguish
 a dated application milestone from current license issuance.
+
+Interactive status questions without explicit date filters check Date Added
+windows of 30 and 365 days. Returned timestamps are validated, named records are
+prioritized, and truncated search pages are disclosed. These two bounded pages
+are not an exhaustive update feed. Previously downloaded text can be reused when
+its discovery title and document date are unchanged, with a warning that the
+full text has not been reverified. Storage reserves still apply to new downloads.
+
+Run the varied offline evaluation before changing the local answer model:
+
+```sh
+ADAMS_EMBEDDING_THREADS=1 python -m adams_rag.benchmark \
+  --db /data/workspace/nrc-snapshot/adams-rag/data/research.sqlite \
+  --index-dir /data/workspace/nrc-snapshot/adams-rag/data/index-cpu \
+  --catalog /data/workspace/nrc-snapshot/adams-catalog/catalog.sqlite \
+  --questions docs/validation_questions.json \
+  --output /data/workspace/nrc-runtime/inquiry-benchmark.json \
+  --model qwen3:4b-instruct-2507-q4_K_M
+```
+
+The report records exact model inputs, answers, omissions, stage timings and
+source IDs. Review claims against the supplied excerpts. A generated answer or
+passing software tests is not an answer-quality pass; do not promote a faster
+model that drops material milestones, qualifications or one side of a comparison.
 
 ## Compact chunk storage
 
