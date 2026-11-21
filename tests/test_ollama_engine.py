@@ -3,6 +3,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -102,6 +103,53 @@ class OllamaEngineTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'exceeded its request timeout'):
                 self.engine._post('/api/chat', {})
             connection.return_value.close.assert_called_once()
+
+    def test_cpu_profile_keeps_weights_temporarily_and_never_uses_gpu(self):
+        settings = {'ADAMS_OLLAMA_THREADS': '2', 'ADAMS_OLLAMA_CPU_ONLY': '1',
+                    'ADAMS_OLLAMA_KEEP_ALIVE_SECONDS': '120'}
+        with patch.dict('os.environ', settings):
+            engine = make_engine('unused', ollama_model='test')
+        with patch.object(engine, '_post', side_effect=[{}, self.response()]) as post:
+            engine.generate(None, 'What happened?', self.evidence)
+        payload = post.call_args.args[1]
+        self.assertEqual(payload['options']['num_gpu'], 0)
+        self.assertEqual(payload['options']['num_thread'], 2)
+        self.assertEqual(payload['keep_alive'], 120)
+        for invalid in (-1, 601, True, 'forever'):
+            with self.assertRaises(ValueError):
+                OllamaEngine('test', keep_alive=invalid)
+        with patch.dict('os.environ', {'ADAMS_OLLAMA_CPU_ONLY': 'yes'}):
+            with self.assertRaises(ValueError):
+                make_engine('unused', ollama_model='test')
+
+    def test_generation_waits_for_background_batch_and_holds_priority(self):
+        from adams_rag.inference_guard import inference_slot, interactive_waiting
+        with tempfile.TemporaryDirectory() as directory:
+            engine = OllamaEngine('test', storage_path=directory)
+            called, errors = threading.Event(), []
+            def post(path, payload, **kwargs):
+                self.assertTrue(interactive_waiting(engine.inference_lock))
+                called.set()
+                return {} if path == '/api/show' else self.response()
+            def generate():
+                try:
+                    engine.generate(None, 'What happened?', self.evidence)
+                except Exception as error:
+                    errors.append(error)
+            with patch.object(engine, '_post', side_effect=post):
+                with inference_slot(engine.inference_lock, foreground=False):
+                    thread = threading.Thread(target=generate)
+                    thread.start()
+                    deadline = time.monotonic() + 3
+                    while not interactive_waiting(engine.inference_lock) and time.monotonic() < deadline:
+                        time.sleep(.01)
+                    self.assertTrue(interactive_waiting(engine.inference_lock))
+                    self.assertFalse(called.is_set())
+                thread.join(3)
+            self.assertFalse(thread.is_alive())
+            self.assertFalse(errors)
+            self.assertTrue(called.is_set())
+            self.assertFalse(interactive_waiting(engine.inference_lock))
 
     def test_loopback_http_and_full_research_pipeline(self):
         response = self.response()

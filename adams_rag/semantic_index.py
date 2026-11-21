@@ -14,6 +14,13 @@ EMBEDDING_REPO = "Qdrant/bge-small-en-v1.5-onnx-Q"
 EMBEDDING_REVISION = "aa8f8b060edb00e03bfdd08813a2949946c8ba55"
 
 
+def cpu_threads():
+    value = int(os.environ.get("ADAMS_EMBEDDING_THREADS", "4"))
+    if not 1 <= value <= 64:
+        raise ValueError("ADAMS_EMBEDDING_THREADS must be between 1 and 64")
+    return value
+
+
 def active_model(directory):
     path = Path(directory) / "ACTIVE_MODEL.json"
     if not path.exists():
@@ -90,7 +97,7 @@ class SemanticIndex:
                         cache_dir=str(self.directory / "models"), allow_patterns=required, token=False))
                 options = {"specific_model_path": str(folder), "local_files_only": True}
             from fastembed import TextEmbedding
-            self.encoder = TextEmbedding(self.model, cache_dir=str(self.directory / "models"), threads=4, **options)
+            self.encoder = TextEmbedding(self.model, cache_dir=str(self.directory / "models"), threads=cpu_threads(), **options)
         return self.encoder
 
     def sync(self, limit=2000, batch_size=8, accessions=None, progress=None, priority_model=None, should_yield=None):
@@ -256,14 +263,14 @@ class SemanticIndex:
             while rows := cursor.fetchmany(1024):
                 if build_mode == "incremental":
                     keys = np.asarray([r[0] for r in rows], dtype=np.uint64)
-                    removed += int(np.sum(index.remove(keys, compact=False, threads=4)))
+                    removed += int(np.sum(index.remove(keys, compact=False, threads=cpu_threads())))
                     rows = [r for r in rows if r[2] is not None]
                 if not rows:
                     continue
                 if any(r[1] != first[0] for r in rows):
                     raise ValueError("Embedding dimension changed")
                 index.add(np.asarray([r[0] for r in rows], dtype=np.uint64),
-                          np.stack([np.frombuffer(r[2], dtype=np.float32) for r in rows]), threads=4)
+                          np.stack([np.frombuffer(r[2], dtype=np.float32) for r in rows]), threads=cpu_threads())
                 updated += len(rows)
             expected = self.store.db.execute("SELECT count(*) FROM dense_vectors WHERE model=?", (self.model,)).fetchone()[0]
             if len(index) != expected:

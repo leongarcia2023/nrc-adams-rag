@@ -21,6 +21,11 @@ case "${NRC_START_LOCAL_MODEL:-1}" in
   *) echo 'NRC_START_LOCAL_MODEL must be 0 or 1.' >&2; exit 1 ;;
 esac
 export NRC_MODEL=${NRC_MODEL:-qwen3:4b-instruct-2507-q4_K_M}
+# Fit the included workspace. These settings do not provision any resources.
+export ADAMS_EMBEDDING_THREADS=${ADAMS_EMBEDDING_THREADS:-1}
+export ADAMS_OLLAMA_THREADS=${ADAMS_OLLAMA_THREADS:-2}
+export ADAMS_OLLAMA_KEEP_ALIVE_SECONDS=${ADAMS_OLLAMA_KEEP_ALIVE_SECONDS:-120}
+export ADAMS_OLLAMA_CPU_ONLY=${ADAMS_OLLAMA_CPU_ONLY:-${NRC_START_LOCAL_MODEL:-1}}
 mkdir -p "$runtime_dir"
 launch() {
   local service=$1 priority=$2

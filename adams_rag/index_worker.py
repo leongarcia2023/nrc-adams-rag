@@ -14,6 +14,7 @@ from .store import Store
 from .storage import StoragePause, require_space, reserve_gb
 from .mlx_embeddings import MODEL as GPU_MODEL, EmbeddingBusy, run_operation
 from .semantic_index import DEFAULT_EMBEDDING, active_model
+from .inference_guard import inference_slot, interactive_waiting, InferenceBusy
 
 
 def pending_window_turn(directory, model, args):
@@ -154,7 +155,15 @@ def main(argv=None):
                     else:
                         raise
             else:
-                result = index.sync(1000, progress=progress)
+                inference_lock = store.path.parent / 'models' / 'inference.lock'
+                try:
+                    with inference_slot(inference_lock, foreground=False, monitor=lambda: progress(0, 0)):
+                        result = index.sync(1000, progress=progress,
+                            should_yield=lambda: interactive_waiting(inference_lock))
+                except InferenceBusy as error:
+                    report("waiting_for_model", str(error))
+                    wait(10)
+                    continue
             if is_window:
                 last_window = result
                 if result.get('yielded_for_interactive'):

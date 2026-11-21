@@ -73,6 +73,32 @@ and a 1.5-CPU quota. Pro membership does not provide enough storage for the enti
 ADAMS archive. Services default to a 5 GB free-space reserve. Expand storage before
 attempting the full collection; a GPU node's temporary disk is not an archive backup.
 
+### Expanding storage on the existing plan
+
+The included workspace disk and a site's shared volume are separate resources.
+The console does not offer a workspace-disk resize control. Ask NC support to
+expand the existing persistent disk to 250 GiB initially, preserving its contents,
+or provide an additional persistent block disk accessible from this workspace.
+Request the monthly storage price and whether the current plan or sponsor covers
+it before authorizing a charge. This is an initial growth allowance, not a claim
+that 250 GiB holds the complete archive and index.
+
+Pro's site storage is provisioned on request. Buying a higher membership level
+is not the only question to ask, and access to a resource does not establish that
+its usage is included. NC's documented object-storage bucket excludes Public
+Research organizations; resolving that requires NC. See the current
+[membership](https://docs.nationalcompute.com/membership/),
+[storage](https://docs.nationalcompute.com/object-storage/) and
+[support](https://docs.nationalcompute.com/support/) documentation.
+
+An in-place disk expansion preserves the existing paths. If NC attaches another
+disk, stop writers, copy and verify the entire snapshot, then change
+`NRC_SNAPSHOT_ROOT` in the private runtime configuration. Keep the original until
+the new collection passes integrity and citation checks. The SQLite database
+requires a local/block filesystem with supported locking; do not move it to NFS
+or an object-storage mount. Do not treat additional storage as approval to rent
+GPUs, upgrade the membership, or enable external model calls.
+
 ## Start or resume
 
 After installing the Python research dependencies, restoring and verifying the
@@ -85,6 +111,9 @@ NRC_PUBLIC_ORIGIN=https://YOUR-SHARD.workspaces.nationalcompute.com
 NRC_BASE_PATH=/user/YOUR-WORKSPACE/port/8765/
 NRC_MODEL=qwen3:4b-instruct-2507-q4_K_M
 ADAMS_OLLAMA_THREADS=2
+ADAMS_OLLAMA_CPU_ONLY=1
+ADAMS_OLLAMA_KEEP_ALIVE_SECONDS=120
+ADAMS_EMBEDDING_THREADS=1
 ADAMS_OLLAMA_TIMEOUT=1800
 ADAMS_MIN_FREE_GB=5
 ```
@@ -102,6 +131,16 @@ runs at a lower CPU priority than interactive answers. Existing worker locks
 prevent duplicate writers. Logs append under `nrc-runtime`; worker status files
 live in `data/archive/STATUS.json`, `data/index-cpu/BUILD_STATUS.json`, and
 `data/markdown/STATUS.json`.
+The CPU indexer also releases its inference slot between committed batches when
+an answer is waiting. The default local workspace profile uses two generation
+threads and one embedding thread. It keeps model weights in RAM for 120 seconds
+after a reply, allowing nearby requests to reuse the loaded model, then unloads
+them. This uses the existing workspace's memory and does not allocate a GPU or
+buy extra CPU capacity. Set `ADAMS_OLLAMA_KEEP_ALIVE_SECONDS=0` to unload
+immediately. Accepted values are 0–600 seconds. A separately funded GPU tunnel
+must set `ADAMS_OLLAMA_CPU_ONLY=0`; skipping the local model launcher defaults to
+that setting. These controls do not make a small CPU workspace an industry-scale
+inference service.
 Processes survive closing the browser, but may need this command again after a
 workspace restart. A saved `STOP` file continues to pause its worker. Rename that
 specific file when intentionally resuming; the launcher does not clear stop files.
