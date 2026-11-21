@@ -161,6 +161,24 @@ source passages before relying on its answers.
 
 ## Coverage and provenance
 
+To fill a topic gap while the full catalog backfill continues, use a separate
+resumable priority queue with the same request-budget database and storage reserve:
+
+```sh
+python -m adams_rag.topic_acquire --db data/research.sqlite \
+  --rate-db data/adams.sqlite --directory data/topics/oklo \
+  --query '"Oklo"' --title Oklo --max-pages 30 --max-documents 1000 \
+  --rps 2 --daily-limit 90000 --min-free-gb 5
+```
+
+Set the daily allowance to the approved allowance used by the other workers.
+Rerun the same command to resume; a different query needs a different directory.
+`STATUS.json` reports discovery, pending records, downloaded content and pauses.
+The title filter limits this priority queue, not the full archive backfill.
+Discovery snippets never become answer evidence. Each downloaded document passes
+the existing identity and extraction checks, and the compact chunk policy applies
+when enabled. This queue does not establish exhaustive topic or archive coverage.
+
 Metadata coverage, downloaded text, accepted extraction, chunks, and embeddings
 are separate counts. This is a partial full-text collection and an ongoing
 full-archive project. A completed catalog scan does not mean every document has

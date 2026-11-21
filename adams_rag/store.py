@@ -431,14 +431,18 @@ class Store:
         tokens = [t for t in tokens if t.lower() not in stop]
         return " OR ".join('"' + t + '"' for t in tokens)
 
-    def lexical(self, question, limit=30, docket=None, date_from=None, date_to=None, *, title_only=False):
-        from .query_terms import subject_phrases, phrase_expression
+    def lexical(self, question, limit=30, docket=None, date_from=None, date_to=None, *, title_only=False, topic_only=False):
+        from .query_terms import subject_phrases, phrase_expression, topic_expression
         phrases = subject_phrases(question) if not re.search(r'\bML\d{5}[A-Z0-9]\d{3}\b', question, re.I) else []
         expression = phrase_expression(phrases) if phrases else self._fts_expression(question)
         if not expression:
             return []
         if title_only:
             expression = 'title : (' + expression + ')'
+        if topic_only and phrases:
+            topics = topic_expression(question, phrases)
+            if topics:
+                expression = '(' + expression + ') AND (' + topics + ')'
         where, filters = self._retrieval_filters(docket, date_from, date_to)
         params = [expression, *filters, limit]
         # FTS5 can return weighted BM25 matches in rank order. Apply filters

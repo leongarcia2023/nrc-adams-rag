@@ -64,6 +64,28 @@ class CPUContextTests(unittest.TestCase):
         self.assertEqual(fallback_queries('How far along is General Matter on their license?'), ['"General Matter"'])
         self.assertEqual(subject_phrases('What happens when a relief valve fails?'), [])
 
+    def test_single_word_company_and_permit_history_retrieve_decisions(self):
+        question = 'What is the history of Oklo attempting to get permits for their reactor?'
+        self.assertEqual(subject_phrases(question), ['Oklo'])
+        self.assertTrue(all('Oklo' in q and 'attempting' not in q for q in fallback_queries(question)))
+        with tempfile.TemporaryDirectory() as root:
+            store = Store(Path(root) / 'research.sqlite')
+            try:
+                with store.db:
+                    for i in range(240):
+                        store.put({'AccessionNumber': f'NOISE{i}', 'DocumentTitle': 'Oklo reactor quality assurance',
+                                   'content': 'Oklo reactor quality assurance testing.'})
+                    store.put({'AccessionNumber': 'DECISION', 'DocumentTitle': 'Oklo combined license application denial',
+                        'content': 'The NRC denied the application without prejudice. This does not prevent a new application.'})
+                    store.put({'AccessionNumber': 'SUBMISSION', 'DocumentTitle': 'Oklo license application submittal',
+                        'content': 'The applicant submitted an application for NRC review.'})
+                rows = hybrid_retrieve(store, question)
+                self.assertEqual(rows[0]['accession'], 'DECISION')
+                self.assertIn('SUBMISSION', [r['accession'] for r in rows[:3]])
+                self.assertIn('without prejudice', rows[0]['text'])
+            finally:
+                store.db.close()
+
     def test_named_subject_topic_prefers_license_over_unrelated_company_records(self):
         with tempfile.TemporaryDirectory() as root:
             store = Store(Path(root) / 'research.sqlite')

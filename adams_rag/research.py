@@ -20,9 +20,13 @@ STOP = set("a an the what which where when how why are is was were did does do t
 
 
 def fallback_queries(question):
-    from .query_terms import subject_phrases, phrase_expression
+    from .query_terms import subject_phrases, phrase_expression, LICENSING, history_question
     phrases = subject_phrases(question)
     if phrases:
+        if LICENSING.search(question) and history_question(question):
+            subject = '(' + phrase_expression(phrases) + ')'
+            return [subject + ' AND (license OR licensing OR application OR permit)',
+                    subject + ' AND (denied OR denial OR acceptance OR withdrawal OR readiness)']
         return [phrase_expression(phrases)]
     tokens = list(dict.fromkeys(t for t in re.findall(r"[A-Za-z0-9][A-Za-z0-9.-]*", question) if t.lower() not in STOP))
     return [" ".join(tokens[:12])] if tokens else []
@@ -73,7 +77,7 @@ def search_live(store, client, question, queries, *, docket=None, date_from=None
         candidates[accession] = {"AccessionNumber": accession}
         scores[accession] = 100
     filters = aps_filters(docket, date_from, date_to)
-    from .query_terms import subject_phrases, contains_subject, topic_terms
+    from .query_terms import subject_phrases, contains_subject, topic_terms, history_question, MILESTONE
     phrases = subject_phrases(question)
     if not direct and not legacy_scope:
         for query in queries[:2]:
@@ -98,6 +102,8 @@ def search_live(store, client, question, queries, *, docket=None, date_from=None
                         pending[accession] = doc
                         title_match = phrases and contains_subject(doc.get('DocumentTitle') or '', phrases)
                         pending_scores[accession] = pending_scores.get(accession, 0) + 1 / (30 + rank) + (.1 if title_match else 0)
+                        if title_match and history_question(question):
+                            pending_scores[accession] += .03 * min(3, len(MILESTONE.findall(doc.get('DocumentTitle') or '')))
                 candidates.update(pending)
                 legacy_records.update(pending_legacy)
                 for accession, score in pending_scores.items():
@@ -155,7 +161,7 @@ def search_live(store, client, question, queries, *, docket=None, date_from=None
 
 def rank_candidates(store, question, semantic=None, docket=None, date_from=None, date_to=None, focus=None, exclusions=None, source_issues=None):
     validate_filters(docket, date_from, date_to)
-    from .query_terms import subject_phrases, contains_subject, topic_terms
+    from .query_terms import subject_phrases, contains_subject, topic_terms, history_question, MILESTONE
     phrases = subject_phrases(question) if not ACCESSION.search(question) else []
     topics = topic_terms(question, phrases) if phrases else set()
     lexical = store.lexical(question, 200, docket, date_from, date_to)
@@ -164,6 +170,8 @@ def rank_candidates(store, question, semantic=None, docket=None, date_from=None,
         # Independently retrieve named-title passages so thousands of ordinary
         # uses of the same words cannot displace the company's own records.
         rankings.append(store.lexical(question, 80, docket, date_from, date_to, title_only=True))
+        if topics:
+            rankings.append(store.lexical(question, 100, docket, date_from, date_to, topic_only=True))
     if semantic:
         diagnostic_search = getattr(semantic, 'search_with_diagnostics', None)
         if callable(diagnostic_search):
@@ -181,6 +189,14 @@ def rank_candidates(store, question, semantic=None, docket=None, date_from=None,
     for row in store.identifier_matches(question, 100, docket, date_from, date_to):
         by_id[row["id"]] = row
         scores[row["id"]] = scores.get(row["id"], 0) + .05 * min(row["identifier_hits"], 4)
+    if phrases and history_question(question):
+        # Title matches often surface short signature/distribution fragments.
+        # Decision letters state the decision in their opening passage.
+        milestones = list(dict.fromkeys(row['accession'] for row in by_id.values()
+            if contains_subject(row['title'], phrases) and MILESTONE.search(row['title'])))[:40]
+        for row in store.opening_chunks(milestones, docket, date_from, date_to):
+            by_id[row['id']] = row
+            scores[row['id']] = scores.get(row['id'], 0) + .04
     # Explicitly requested accessions must not be displaced by broad semantic neighbors.
     direct = {a.upper() for a in ACCESSION.findall(question)}
     if direct and re.search(r"\b(summariz\w*|summary|overview|purpose)\b", question, re.I):
@@ -203,6 +219,8 @@ def rank_candidates(store, question, semantic=None, docket=None, date_from=None,
             scores[key] += .05 if phrases else .005
         if phrases and contains_subject(row['title'], phrases):
             scores[key] += .04
+            if history_question(question):
+                scores[key] += .02 * min(3, len(MILESTONE.findall(row['title'])))
         if topics:
             title_terms = {w[:6] for w in re.findall(r'[a-z0-9]+', row['title'].casefold())}
             body_terms = {w[:6] for w in re.findall(r'[a-z0-9]+', row['text'].casefold())}
@@ -244,6 +262,16 @@ def _hybrid_retrieve(store, question, semantic, top_k, docket, date_from, date_t
     from .evidence import SourceBindings,SourceBindingError,report_binding_issue
     bindings=SourceBindings(store.db)
     ranked = rank_candidates(store, question, semantic, docket, date_from, date_to, focus, exclusions, source_issues)
+    from .query_terms import history_question
+    if history_question(question):
+        # Spend the small context on different records before repeated chunks.
+        seen_documents, first, rest = set(), [], []
+        for row in ranked:
+            if row['accession'] in seen_documents:
+                rest.append(row)
+            else:
+                seen_documents.add(row['accession']); first.append(row)
+        ranked = first + rest
     direct = {a.upper() for a in ACCESSION.findall(question)}
     if direct or scope_accessions is not None:
         allowed = {a.casefold() for a in (scope_accessions if scope_accessions is not None else direct | set(focus or []))}
