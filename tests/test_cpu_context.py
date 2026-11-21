@@ -17,7 +17,7 @@ class CPUContextTests(unittest.TestCase):
                      'text': ('Background. ' * 80 + 'The valve failed. Cause and effect must be evaluated. ' + 'More context. ' * 100)}
                     for i in range(10)]
         system, data, audit = pack('What happens when the valve fails?', evidence)
-        self.assertLessEqual(audit['input_bytes'], 6000)
+        self.assertLessEqual(audit['input_bytes'], 4500)
         self.assertEqual(len({s['accession'] for s in data['sources']}), len(data['sources']))
         for item, span in zip(data['sources'], audit['source_spans']):
             original = evidence[item['source_id'] - 1]['text']
@@ -27,7 +27,7 @@ class CPUContextTests(unittest.TestCase):
     def test_nonascii_and_large_question_obey_actual_byte_budget(self):
         evidence = [{'citation': 1, 'accession': 'one', 'title': 'Unicode', 'text': 'électricité 核能 ' * 2000}]
         system, data, audit = pack('Why ' * 400, evidence)
-        self.assertLessEqual(len(system.encode()) + len(json.dumps(data, ensure_ascii=False).encode()), 6000)
+        self.assertLessEqual(len(system.encode()) + len(json.dumps(data, ensure_ascii=False).encode()), 4500)
 
     def test_cpu_rejects_citations_to_passages_it_did_not_read(self):
         evidence = [{'citation': i + 1, 'accession': str(i), 'title': 'Title', 'text': 'Valve failed. ' * 300} for i in range(10)]
@@ -105,6 +105,30 @@ class CPUContextTests(unittest.TestCase):
                 self.assertEqual(order, ['preview', 'generate'])
                 self.assertEqual(result['mode'], 'evidence_only')
                 self.assertTrue(result['sources'])
+            finally:
+                store.db.close()
+
+    def test_live_focus_survives_semantic_storage_failure(self):
+        with tempfile.TemporaryDirectory() as root:
+            store = Store(Path(root) / 'research.sqlite')
+            doc = {'AccessionNumber': 'ML26300A017', 'DocumentTitle': 'General Matter license application acceptance',
+                   'content': 'The application is accepted for detailed review; it is not an issued license. '
+                              + 'Procedural background and review scope. ' * 250
+                              + '\n\nDISTRIBUTION: General Matter license application acceptance.'}
+            class Client:
+                def request(self, payload=None, accession=None):
+                    return {'document': doc} if accession else {'count': 1, 'results': [{'document': doc}]}
+            class FullDisk:
+                def sync(self, **kwargs):
+                    raise RuntimeError('Storage pause')
+                def search(self, *args):
+                    raise RuntimeError('Storage pause')
+            try:
+                result = research(store, 'How far along is General Matter on their license?',
+                                  client=Client(), semantic=FullDisk(), generate=False)
+                self.assertEqual(result['sources'][0]['ordinal'], 1)
+                self.assertIn('not an issued license', result['sources'][0]['text'])
+                self.assertTrue(any('Using keyword retrieval' in w for w in result['warnings']))
             finally:
                 store.db.close()
 

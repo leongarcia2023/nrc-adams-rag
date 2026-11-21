@@ -46,7 +46,7 @@ def excerpt(text, question, maximum=1100):
     return raw, best, best + len(raw)
 
 
-def pack(question, evidence, budget=6000):
+def pack(question, evidence, budget=4500):
     data = {'question': question, 'sources': []}
     spans = []
     # One passage per document first, then additional passages if space remains.

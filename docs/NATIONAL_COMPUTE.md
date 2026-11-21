@@ -214,7 +214,7 @@ The platform offered no automatic spending cap. Explicitly release through Marsh
 and verify the released state. Recheck current terms before another rental.
 # CPU questions and live discovery
 
-The CPU-only Ollama adapter limits each generation prompt to 6,000 UTF-8 bytes
+The CPU-only Ollama adapter limits each generation prompt to 4,500 UTF-8 bytes
 of system instructions and JSON input, four source excerpts, and 384 output
 tokens. It records the exact excerpt ranges used. This is a bounded reading
 budget, not a promise that every relevant fact was supplied to the model.

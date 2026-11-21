@@ -414,6 +414,7 @@ def research(store, question, *, engine=None, semantic=None, client=None, catalo
         semantic_failed = True
         warnings.append(f"Using keyword retrieval: {error}")
         evidence = hybrid_retrieve(store, retrieval_question, None, top_k, docket, date_from, date_to,
+                                   discovery["fetched"] if discovery else None,
                                    scope_accessions=scope, exclusions=exclusions, source_issues=source_issues)
     exclusions = list({(r["accession"],r["text_hash"],r["page"]):r for r in exclusions}.values())
     if exclusions:

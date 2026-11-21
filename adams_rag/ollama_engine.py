@@ -109,7 +109,7 @@ class OllamaEngine(MLXEngine):
                 "execution": "local_ollama", "resources_managed_by": "ollama",
                 "cpu_only": self.cpu_only, "num_threads": self.num_threads,
                 "keep_alive_seconds": self.keep_alive, "request_timeout_seconds": self.timeout,
-                "context_byte_limit": 6000 if self.cpu_only else None}
+                "context_byte_limit": 4500 if self.cpu_only else None}
 
     def complete(self, system, data, max_tokens=None):
         tokens = self.max_tokens if max_tokens is None else max_tokens
