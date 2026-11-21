@@ -256,6 +256,15 @@ For a single-document question it reads two longer passages instead of three
 shorter ones. Licensing searches recognize "reapply" and "resubmit" as related
 wording. History prompts omit publication dates for retrospective letters and
 reports, keeping dates from the actual source text separate from report timing.
+Letter address blocks and regulatory section headings are excluded when a
+substantive body is available. Comments/proposals and guidance retain explicit
+attribution and are not presented as proof of current binding rules. A narrow
+modality check rejects observable cases where a planned review becomes a started,
+completed or confirmed event. These checks still do not establish entailment.
+
+Questions asking for an archive-wide total receive a coverage-limit response
+without a model call: a partial collection and bounded search cannot supply an
+exhaustive count. Named-document quantities remain eligible for generation.
 
 Set `NRC_LIVE_RETRIEVAL=1` in the private workspace environment to allow bounded
 NRC APS lookups for user questions. The default launcher remains offline. Live
