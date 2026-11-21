@@ -39,7 +39,9 @@ def content_words(question):
 def question_facets(question):
     """Small, inspectable search facets; no model call or invented entities."""
     parts = re.split(r'[?;]|\band\s+(?=(?:can|could|what|why|when|how|does|did|is|are|would|should)\b)', question, flags=re.I)
-    comparison = re.search(r'\b(?:how\s+does|how\s+do)\s+(.+?)\s+differ\s+from\s+(.+?)[?.!]*$', question, re.I)
+    comparison = (re.search(r'\b(?:how\s+does|how\s+do)\s+(.+?)\s+differ\s+from\s+(.+?)[?.!]*$', question, re.I)
+                  or re.search(r'\bdifferences?\s+between\s+(.+?)\s+and\s+(.+?)[?.!]*$', question, re.I)
+                  or re.search(r'\bcompare\s+(.+?)\s+(?:with|and|to)\s+(.+?)[?.!]*$', question, re.I))
     if comparison:
         parts = list(comparison.groups())
     facets = []
@@ -55,7 +57,17 @@ def inquiry_order(rows, question):
     """Reserve evidence for both sides of a comparison and recent status records."""
     kind, chosen = inquiry_kind(question), []
     if kind == 'comparison':
-        for phrase in subject_phrases(question):
+        phrases = subject_phrases(question)
+        if not phrases:
+            facets = question_facets(question)
+            if len(facets) > 1:
+                for facet in facets:
+                    terms = {w[:6] for w in content_words(facet)}
+                    match = next((r for r in rows if terms <=
+                                  {w[:6] for w in re.findall(r'[a-z0-9]+', r['text'].lower())}), None)
+                    if match is not None and match not in chosen:
+                        chosen.append(match)
+        for phrase in phrases:
             match = next((r for r in rows if contains_subject(r['title'], [phrase])
                           or contains_subject(r['text'], [phrase], proper_names=True)), None)
             if match is not None and match not in chosen:

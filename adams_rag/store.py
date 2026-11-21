@@ -433,14 +433,15 @@ class Store:
         where, filters = self._retrieval_filters(docket, date_from, date_to)
         marks = ','.join('?' for _ in accessions)
         return [dict(row) for row in self.db.execute('''WITH scoped AS MATERIALIZED (
-            SELECT id FROM chunks WHERE accession IN (''' + marks + ''')),
+            SELECT c.id FROM chunks c JOIN documents d ON d.accession=c.accession
+            WHERE c.accession IN (''' + marks + ')' + where + '''),
             ranked AS MATERIALIZED (
             SELECT scoped.id,bm25(chunks_fts) AS score FROM scoped CROSS JOIN chunks_fts
             WHERE chunks_fts.rowid=scoped.id AND chunks_fts MATCH ? ORDER BY score LIMIT ?)
             SELECT c.*,d.title,d.url,d.provenance,d.document_date,ranked.score
             FROM ranked JOIN chunks c ON c.id=ranked.id JOIN documents d ON d.accession=c.accession
-            WHERE 1=1''' + where + ' ORDER BY ranked.score',
-            (*accessions, 'text : (' + expression + ')', limit, *filters))]
+            ORDER BY ranked.score''',
+            (*accessions, *filters, 'text : (' + expression + ')', limit))]
 
     @staticmethod
     def _fts_expression(question):

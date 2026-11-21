@@ -179,6 +179,18 @@ class InteractiveTests(unittest.TestCase):
         current = hybrid_retrieve(self.store, 'What is the current Atlas licensing status?')
         self.assertEqual(current[0]['accession'], 'NEW')
 
+    def test_process_comparison_keeps_evidence_for_each_concept(self):
+        from adams_rag.query_terms import question_facets
+        question = 'How does a construction permit differ from an operating license?'
+        self.assertEqual(question_facets(question), ['construction permit', 'operating license'])
+        self.put('BUILD', 'Authorization to construct', 'A construction permit authorizes construction; it does not authorize operation.')
+        self.put('OPERATE', 'Authorization to operate', 'An operating license authorizes operation subject to its license conditions.')
+        for i in range(12):
+            self.put(f'NOISE{i}', 'License correspondence', 'This correspondence discusses operating license inspections.')
+        sources = hybrid_retrieve(self.store, question)
+        self.assertTrue(any(s['accession'] == 'BUILD' for s in sources[:2]))
+        self.assertTrue(any('operating license' in s['text'] for s in sources[:2]))
+
     def test_compact_context_is_bounded_preserves_source_slices_and_negation(self):
         sources = [{'citation': i + 1, 'accession': str(i), 'title': 'Oklo licensing milestone',
                     'document_date': f'{2020+i}-01-01', 'text': ('Header and distribution. ' * 50 +

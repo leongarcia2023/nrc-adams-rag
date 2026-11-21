@@ -214,6 +214,11 @@ def rank_candidates(store, question, semantic=None, docket=None, date_from=None,
     topics = topic_terms(question, phrases) if phrases else set()
     lexical = store.lexical(question, 200, docket, date_from, date_to)
     rankings = [lexical]
+    from .query_terms import inquiry_kind, question_facets
+    facets = question_facets(question)
+    if inquiry_kind(question) == 'comparison' and not phrases and len(facets) > 1:
+        for facet in facets:
+            rankings.append(store.lexical(facet, 40, docket, date_from, date_to, require_all=True))
     if not phrases:
         # A second, conjunctive channel keeps generic regulatory words from
         # displacing passages containing the whole requested technical concept.
