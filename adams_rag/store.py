@@ -26,12 +26,17 @@ def source_url(value, accession):
 
 
 def chunk_text(text, size=350, overlap=50):
+    for start, end in chunk_spans(text, size, overlap):
+        yield text[start:end]
+
+
+def chunk_spans(text, size=350, overlap=50):
     if not 0 <= overlap < size:
         raise ValueError("overlap must be between zero and chunk size")
     words = list(re.finditer(r"\S+", text))
     for start in range(0, len(words), size - overlap):
         end = min(start + size, len(words))
-        yield text[words[start].start():words[end - 1].end()]
+        yield words[start].start(), words[end - 1].end()
         if end == len(words):
             break
 
@@ -44,7 +49,8 @@ class Store:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
         self.db = sqlite3.connect(path, timeout=30)
-        self.db.row_factory = sqlite3.Row
+        from .chunk_storage import install_reader
+        install_reader(self.db)
         self.db.execute("PRAGMA foreign_keys=ON")
         self.db.execute("PRAGMA journal_mode=WAL")
         # Reclaim oversized reusable journals after a safe WAL reset. Active
@@ -174,6 +180,9 @@ class Store:
         );
         COMMIT;
         """)
+        from .chunk_storage import setup as setup_chunk_storage
+        with self.db:
+            setup_chunk_storage(self.db)
         # Progress, quality-version checks and the old search-excerpt migration
         # must not read every document's full metadata. These small indexes also
         # keep frequent worker restarts independent of that growing text.
@@ -333,15 +342,21 @@ class Store:
         self.db.execute("DELETE FROM chunks WHERE accession=?", (accession,))
         if status != "indexed":
             return status
+        from .chunk_storage import enabled, source_id, reference
+        compact_source = source_id(self.db, accession, digest(text_hash + serialized)) if enabled(self.db) else None
         ordinal = 0
+        page_offset = 0
         for page, text in (enumerate(pages, 1) if pages is not None else [(None, body)]):
-            for chunk in chunk_text(text):
+            for start, end in chunk_spans(text):
+                chunk = text[start:end]
                 ordinal += 1
+                stored = reference(compact_source, page_offset + start, page_offset + end, chunk) if compact_source else chunk
                 cursor = self.db.execute("INSERT INTO chunks(accession,ordinal,page,text) VALUES(?,?,?,?)",
-                                         (accession, ordinal, page, chunk))
+                                         (accession, ordinal, page, stored))
                 self.db.execute("INSERT INTO chunks_fts(rowid,text,title,accession) VALUES(?,?,?,?)",
                                 (cursor.lastrowid, chunk, title, search_key))
                 index_chunk(self.db, cursor.lastrowid, chunk)
+            page_offset += len(text) + 1
         return status
 
     def status(self):

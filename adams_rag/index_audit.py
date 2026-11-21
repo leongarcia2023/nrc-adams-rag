@@ -127,7 +127,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     db_path = Path(args.db).resolve()
     db = sqlite3.connect(db_path.as_uri() + "?mode=ro", uri=True, timeout=30)
-    db.row_factory = sqlite3.Row
+    from .chunk_storage import install_reader
+    install_reader(db)
     try:
         result = audit_profiles(db, db_path, args.directory, args.baseline, args.candidate)
     finally:

@@ -232,3 +232,35 @@ requests use the existing private NRC key and shared rate database, with at most
 phrases remain phrase anchors; an absent company name is not relaxed into common
 individual words. Live discovery is still bounded, so an answer must distinguish
 a dated application milestone from current license issuance.
+
+## Compact chunk storage
+
+`adams_rag.chunk_migrate` replaces duplicate passage bodies with version-pinned
+character ranges and SHA-256 checksums. The source stays in its existing compressed
+Markdown archive or compressed retained-version record. Chunk IDs, physical pages,
+FTS entries, vectors, extraction reviews and saved citations are preserved.
+The migration compares every converted passage with its retained source and reads
+it back through the application reader. A mismatch leaves that document's chunks
+unchanged and records a migration holdout; it does not approve its extraction.
+
+Build an offline copy using SQLite's backup API, keep its `markdown` directory
+available beside it, then run:
+
+```sh
+python -m adams_rag.chunk_migrate --db /path/to/offline-copy/research.sqlite
+```
+
+The durable cursor makes this resumable. It also enables compact storage for
+future ingestion. Run SQLite integrity/foreign-key checks and retrieval checks on
+the copy before switching. Use `VACUUM INTO` on the migrated copy to reclaim free
+pages and fragmentation. IDs in chunk references are explicit integer primary
+keys and survive compaction. Temporary build space is not a durable backup: do
+not remove the active database until a verified replacement or recoverable backup
+exists on persistent storage. Stop all database users during the final switch.
+
+Application `Store` connections resolve both old text and compact references.
+Read-only tools that use raw SQLite must call
+`adams_rag.chunk_storage.install_reader(connection)` before consuming `text`
+columns. Select `CAST(text AS BLOB) AS stored_text` when inspecting raw storage.
+Old application versions cannot interpret the new binary references. Missing or
+changed canonical sources fail closed instead of yielding fabricated passages.
