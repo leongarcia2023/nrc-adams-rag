@@ -64,10 +64,10 @@ def notes_answer(result, data):
         if role in {'comment or proposal', 'guidance'}:
             note = f"The {role} states: " + note
         paragraphs.append({'text': note, 'source_ids': [source['source_id']]})
-    gaps = [gap.strip()] if gap.strip() else []
+    gaps = ['Gap in the selected excerpts: ' + gap.strip()] if gap.strip() else []
     from .query_terms import inquiry_kind
     kind = inquiry_kind(data['question'])
-    if kind == 'comparison' and gap.strip() and re.search(r'\b(?:compar\w*|distinguish|differences?)\b', gap, re.I):
+    if kind == 'comparison' and gap.strip():
         raise ValueError('The selected evidence did not support the requested comparison; source excerpts retained')
     if kind == 'history':
         gaps.append('These excerpts support selected milestones, not a complete licensing history.')

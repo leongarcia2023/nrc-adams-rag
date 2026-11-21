@@ -344,6 +344,9 @@ class InteractiveTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'did not support the requested comparison'):
             notes_answer({'notes': {'1': 'Both follow the prescribed form.'},
                           'gap': 'The sources do not distinguish their functions.'}, data)
+        with self.assertRaisesRegex(ValueError, 'did not support the requested comparison'):
+            notes_answer({'notes': {'1': 'Both follow the prescribed form.'},
+                          'gap': 'No details about one of the subjects are available.'}, data)
 
     def test_archive_total_does_not_run_model_over_incomplete_sample(self):
         self.put()
