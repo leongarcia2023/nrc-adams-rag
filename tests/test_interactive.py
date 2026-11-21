@@ -71,6 +71,32 @@ class InteractiveTests(unittest.TestCase):
         self.assertIn(old['AccessionNumber'], calls)
         self.assertFalse(result['discovery']['cached'])
 
+    def test_current_status_discovery_uses_checked_added_windows_and_newest_named_record(self):
+        import datetime as dt
+        from adams_rag.research import search_live, fallback_queries
+        today = dt.datetime.now(dt.timezone.utc).date()
+        old = self.put('ML26001A001', 'Atlas license application', DocumentDate=(today-dt.timedelta(days=2)).isoformat())
+        new = self.put('ML26001A002', 'Atlas license review update', DocumentDate=today.isoformat())
+        for doc in (old, new):
+            doc['DateAddedTimestamp'] = today.isoformat() + ' 12:00'
+        calls = []
+        class Client:
+            def request(self, payload=None, accession=None):
+                self_test.assertIsNone(accession)
+                calls.append(payload)
+                return {'count': 101, 'results': [{'document': d} for d in (old, new)]}
+        self_test = self
+        question = 'What is the current Atlas licensing status?'
+        result = search_live(self.store, Client(), question, fallback_queries(question), max_documents=1, reuse_cached=True)
+        self.assertEqual(result['cached'], [new['AccessionNumber']])
+        self.assertEqual(len(calls), 2)
+        self.assertTrue(all(p['filters'][0]['field'] == 'DateAddedTimestamp' for p in calls))
+        self.assertIn('not an exhaustive', ' '.join(result['warnings']))
+        old['DateAddedTimestamp'] = '1999-01-01 00:00'
+        result = search_live(self.store, Client(), question, fallback_queries(question), reuse_cached=True)
+        self.assertEqual(result['cached'], [])
+        self.assertIn('outside the requested', ' '.join(result['warnings']))
+
     def test_coverage_snapshot_is_dated_and_invalid_snapshots_fall_back(self):
         self.put()
         folder = self.root / 'archive'

@@ -80,17 +80,36 @@ def search_live(store, client, question, queries, *, docket=None, date_from=None
         candidates[accession] = {"AccessionNumber": accession}
         scores[accession] = 100
     filters = aps_filters(docket, date_from, date_to)
-    from .query_terms import subject_phrases, contains_subject, topic_terms, history_question, MILESTONE, decision_title
+    from .query_terms import subject_phrases, contains_subject, topic_terms, history_question, MILESTONE, decision_title, inquiry_kind
     phrases = subject_phrases(question)
     if not direct and not legacy_scope:
-        for query in queries[:2]:
+        plans = [(q, filters, None) for q in queries[:2]]
+        if reuse_cached and queries and inquiry_kind(question) == 'status' and not date_from and not date_to:
+            today = dt.datetime.now(dt.timezone.utc).date()
+            upper = (today + dt.timedelta(days=1)).isoformat()
+            plans = []
+            for days in (30, 365):
+                lower = (today - dt.timedelta(days=days)).isoformat()
+                recent = {'field': 'DateAddedTimestamp', 'value':
+                          f"(DateAddedTimestamp ge '{lower}') and (DateAddedTimestamp le '{upper}')"}
+                plans.append((queries[0], [*filters, recent], (lower, upper)))
+        for query, request_filters, added_window in plans:
             if progress:
                 progress("Searching ADAMS", query)
             try:
-                response = client.request(payload={"q": query, "content": False, "filters": filters, "anyFilters": [],
+                response = client.request(payload={"q": query, "content": False, "filters": request_filters, "anyFilters": [],
                     "mainLibFilter": True, "legacyLibFilter": not bool(phrases), "sort": "", "sortDirection": 0, "skip": 0})
                 docs = unpack_search(response)
-                summary["queries"].append({"query": query, "reported_matches": response.get("count"), "examined": len(docs)})
+                if added_window:
+                    lower, upper = map(dt.datetime.fromisoformat, added_window)
+                    for doc in docs:
+                        stamp = dt.datetime.fromisoformat(doc.get('DateAddedTimestamp') or '')
+                        if stamp.tzinfo is not None or not lower <= stamp <= upper:
+                            raise ValueError('NRC returned a record outside the requested Date Added window')
+                summary["queries"].append({"query": query, "reported_matches": response.get("count"), "examined": len(docs),
+                                           "date_added_window": added_window})
+                if isinstance(response.get('count'), int) and response['count'] > len(docs):
+                    summary['warnings'].append('Live discovery examined a bounded page of matching records; it is not an exhaustive status check.')
                 # Search content is discovery metadata, never evidence.
                 pending, pending_scores, pending_legacy = {}, {}, {}
                 with store.db:
@@ -122,12 +141,17 @@ def search_live(store, client, question, queries, *, docket=None, date_from=None
                     scores[accession] = scores.get(accession, 0) + score
             except (RuntimeError, ValueError, BudgetStop, OSError) as error:
                 summary["warnings"].append(str(error))
-                break
+                if isinstance(error, BudgetStop):
+                    break
     summary["discovered"] = len(candidates) + len(legacy_records)
     summary["legacy_records"] = list(legacy_records.values())
     if legacy_records:
         summary["warnings"].append(f"{len(legacy_records)} legacy records retained separately as metadata; their full text was not retrieved.")
     queue = sorted(candidates, key=lambda a: scores[a], reverse=True)
+    if reuse_cached and inquiry_kind(question) == 'status' and phrases:
+        named = [a for a in queue if contains_subject(candidates[a].get('DocumentTitle') or '', phrases)]
+        named.sort(key=lambda a: (str(candidates[a].get('DocumentDate') or ''), scores[a]), reverse=True)
+        queue = named + [a for a in queue if a not in named]
     attempted = set()
     while queue and len(attempted) < max_documents:
         accession = queue.pop(0)
