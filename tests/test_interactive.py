@@ -273,6 +273,18 @@ class InteractiveTests(unittest.TestCase):
         self.assertIn('without prejudice', data['sources'][0]['text'])
         self.assertIn('free to resubmit', data['sources'][0]['text'])
 
+    def test_status_context_reads_the_determination_after_the_address_block(self):
+        sources = [{'citation': 1, 'accession': 'L', 'title': 'Atlas initial license application acceptance',
+                    'text': 'OFFICIAL USE ONLY\nWASHINGTON, D.C.\nAtlas License Application\n' * 12
+                        + '\nDear Dr. Smith:\n\nThe NRC completed its acceptance review of the application. '
+                        'The application was accepted for detailed review; this is not an issued operating license.'},
+                   {'citation': 2, 'accession': 'S', 'title': 'Appointment of safeguards reviewing official - Atlas',
+                    'text': 'From: Atlas\nTo: Reviewing officials\nWashington, D.C.\nAddress information.'}]
+        _, data, _ = pack_compact('How far along is Atlas on their license?', sources)
+        self.assertEqual([s['source_id'] for s in data['sources']], [1])
+        self.assertIn('not an issued operating license', data['sources'][0]['text'])
+        self.assertNotIn('WASHINGTON', data['sources'][0]['text'])
+
     def test_report_dates_are_not_event_dates_and_unfinished_answers_are_rejected(self):
         text = ('June 3, 2026\n\nDistribution and administrative header.\n\n'
                 'By letter dated February 21, 2025, Atlas indicated its intention to submit a license application in two phases. '
@@ -293,6 +305,39 @@ class InteractiveTests(unittest.TestCase):
             check_compact_answer({'claims': [{'text': 'Atlas requested an assessment in July 2025.', 'source_ids': [1]}]}, cited)
         with self.assertRaisesRegex(ValueError, 'mid-sentence'):
             check_compact_answer({'claims': [{'text': 'The NRC reviewed the combined license application submitted by this company in order', 'source_ids': [1]}]}, cited)
+
+    def test_future_review_cannot_be_reported_as_started(self):
+        data = {'sources': [{'source_id': 1, 'text': 'The application is acceptable for docketing. The NRC will perform a detailed technical review.'}]}
+        with self.assertRaisesRegex(ValueError, 'planned review'):
+            check_compact_answer({'claims': [{'text': 'The application was docketed and its technical review initiated.', 'source_ids': [1]}]}, data)
+        check_compact_answer({'claims': [{'text': 'The NRC will perform a detailed technical review.', 'source_ids': [1]}]}, data)
+
+    def test_comment_cannot_be_presented_as_unqualified_current_rule(self):
+        from adams_rag.cpu_context import notes_answer
+        source = {'citation': 1, 'accession': 'C', 'title': 'Comments on petition for rulemaking',
+                  'text': 'The commenter proposes changing the license term to forty years.'}
+        _, data, _ = pack_compact('What license terms are required?', [source])
+        answer = notes_answer({'notes': {'1': 'The proposed license term is forty years.'}, 'gap': ''}, data)
+        self.assertTrue(answer['paragraphs'][0]['text'].startswith('The comment or proposal states:'))
+        self.assertIn('binding requirements', ' '.join(answer['gaps']))
+
+    def test_archive_total_does_not_run_model_over_incomplete_sample(self):
+        self.put()
+        class NoGeneration:
+            def generate(self, *args):
+                raise AssertionError('A partial sample cannot establish an archive total')
+        result = research(self.store, 'How many license applications has NRC denied in total?',
+                          engine=NoGeneration(), live=False, interactive=True)
+        self.assertEqual(result['answer_kind'], 'coverage_limit')
+        self.assertEqual(result['mode'], 'evidence_only')
+        self.assertIn('not a complete count', result['answer'])
+
+    def test_section_header_does_not_replace_operative_text(self):
+        text = '§ 50.23 Construction permits. A construction permit is issued before a license. Operation requires a separate authorization.'
+        snippet, start, end = complete_excerpt(text, 'What is a construction permit?', 180)
+        self.assertEqual(snippet, text[start:end])
+        self.assertNotIn('§ 50.23', snippet)
+        self.assertIn('Operation requires', snippet)
 
 
 if __name__ == '__main__':

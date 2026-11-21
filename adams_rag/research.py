@@ -219,6 +219,7 @@ def rank_candidates(store, question, semantic=None, docket=None, date_from=None,
     if inquiry_kind(question) == 'comparison' and not phrases and len(facets) > 1:
         for facet in facets:
             rankings.append(store.lexical(facet, 40, docket, date_from, date_to, require_all=True))
+            rankings.append(store.lexical(facet, 20, docket, date_from, date_to, require_all=True, title_only=True))
     if not phrases:
         # A second, conjunctive channel keeps generic regulatory words from
         # displacing passages containing the whole requested technical concept.
@@ -284,6 +285,17 @@ def rank_candidates(store, question, semantic=None, docket=None, date_from=None,
             by_id[row['id']] = row
             scores[row['id']] = scores.get(row['id'], 0) + .04
     for key, row in by_id.items():
+        if inquiry_kind(question) in {'requirements', 'comparison'} and not phrases:
+            # Prefer a relevant regulatory section over incidental mentions in
+            # fee tables or historical comments. Provenance remains visible.
+            if row.get('provenance') == 'community_regulatory_text' and re.match(r'\s*§\s*\d+\.\d+', row['text']):
+                from .query_terms import content_words
+                title_words = {w[:6] for w in content_words(row['title'])}
+                question_words = {w[:6] for w in content_words(question)}
+                scores[key] += .02 * min(3, len(title_words & question_words))
+            if not re.search(r'\b(?:fees?|costs?|dollars?|charges?)\b', question, re.I):
+                if len(re.findall(r'\d[\d,]*\s*(?:dollars|\$)|\$\s*\d|\bfees?\b', row['text'], re.I)) >= 3:
+                    scores[key] -= .04
         if row["accession"].upper() in direct:
             scores[key] += .1
         elif focus and row["accession"] in focus:
@@ -574,6 +586,15 @@ def research(store, question, *, engine=None, semantic=None, client=None, catalo
     generation_started = time.monotonic()
     if not evidence:
         result.update(answer="No supporting passages were found in this bounded retrieval. This does not establish that ADAMS has no answer.", insufficient_evidence=True)
+    elif (result['inquiry_kind'] == 'enumeration' and
+          re.search(r'\b(?:how many|total number|count)\b', question, re.I) and
+          re.search(r'\b(?:NRC|archive|database|in total)\b', question, re.I) and
+          not re.search(r'\b(?:this|that|the)\s+(?:document|letter|report)\b', question, re.I) and
+          not ACCESSION.search(question)):
+        result.update(answer='An archive-wide total cannot be established from this partial collection and bounded search. '
+                      'The retrieved records are examples, not a complete count.',
+                      insufficient_evidence=True, answer_kind='coverage_limit',
+                      gaps=['A verified complete set of matching records is required to calculate this total.'])
     elif generate and engine:
         if progress:
             progress("Generating a cited answer", "The answer model is reading the retrieved passages")
