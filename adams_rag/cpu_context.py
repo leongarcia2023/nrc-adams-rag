@@ -67,6 +67,8 @@ def notes_answer(result, data):
     gaps = [gap.strip()] if gap.strip() else []
     from .query_terms import inquiry_kind
     kind = inquiry_kind(data['question'])
+    if kind == 'comparison' and gap.strip() and re.search(r'\b(?:compar\w*|distinguish|differences?)\b', gap, re.I):
+        raise ValueError('The selected evidence did not support the requested comparison; source excerpts retained')
     if kind == 'history':
         gaps.append('These excerpts support selected milestones, not a complete licensing history.')
     elif kind == 'status':

@@ -337,6 +337,14 @@ class InteractiveTests(unittest.TestCase):
         self.assertTrue(answer['paragraphs'][0]['text'].startswith('The comment or proposal states:'))
         self.assertIn('binding requirements', ' '.join(answer['gaps']))
 
+    def test_failed_comparison_does_not_publish_unrelated_individual_summaries(self):
+        from adams_rag.cpu_context import notes_answer
+        data = {'question': 'How does a construction permit differ from an operating license?',
+                'sources': [{'source_id': 1, 'text': 'Applications follow the prescribed form.'}]}
+        with self.assertRaisesRegex(ValueError, 'did not support the requested comparison'):
+            notes_answer({'notes': {'1': 'Both follow the prescribed form.'},
+                          'gap': 'The sources do not distinguish their functions.'}, data)
+
     def test_archive_total_does_not_run_model_over_incomplete_sample(self):
         self.put()
         class NoGeneration:
