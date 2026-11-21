@@ -247,19 +247,31 @@ class InteractiveTests(unittest.TestCase):
         from adams_rag.query_terms import question_facets
         from adams_rag.research import hybrid_retrieve
         question = 'Summarize ML21357A034. Why did the NRC deny the application, and could the company reapply?'
-        self.assertIn('company reapply', question_facets(question))
+        self.assertIn('company reapply resubmit resubmission', question_facets(question))
         with tempfile.TemporaryDirectory() as root:
             store = Store(Path(root) / 'research.sqlite')
             try:
                 with store.db:
                     store.put({'AccessionNumber': 'ML21357A034', 'DocumentTitle': 'Denial of application',
                         'content': 'The NRC denied the application for missing information. ' + 'Administrative background. ' * 1000
-                            + 'The company may reapply in a new application. This decision is without prejudice.'})
+                            + 'The company may resubmit its application. This decision is without prejudice.'})
                 rows = hybrid_retrieve(store, question)
-                self.assertTrue(any('may reapply' in row['text'] for row in rows[:3]))
+                self.assertTrue(any('may resubmit' in row['text'] for row in rows[:3]))
                 self.assertTrue(all(row['accession'] == 'ML21357A034' for row in rows))
             finally:
                 store.db.close()
+
+    def test_named_document_context_keeps_resubmission_qualification(self):
+        body = ('The purpose of this letter is to inform Atlas of the decision to deny its application under the applicable agency rules. '
+                'Because Atlas provided insufficient information to review key safety and design aspects, the NRC is denying the application without prejudice. '
+                'Atlas is free to resubmit its application supplemented by additional information. ')
+        sources = [{'citation': i+1, 'accession': 'ML21357A034', 'title': 'Denial of license application',
+                    'text': body if i == 0 else 'This footnote describes unresolved quality assurance issues. ' * 30} for i in range(3)]
+        _, data, audit = pack_compact('Summarize ML21357A034. Why did NRC deny the application, and could the company reapply?', sources)
+        self.assertLessEqual(audit['input_bytes'], 2800)
+        self.assertEqual(len(data['sources']), 2)
+        self.assertIn('without prejudice', data['sources'][0]['text'])
+        self.assertIn('free to resubmit', data['sources'][0]['text'])
 
     def test_report_dates_are_not_event_dates_and_unfinished_answers_are_rejected(self):
         text = ('June 3, 2026\n\nDistribution and administrative header.\n\n'
@@ -267,7 +279,7 @@ class InteractiveTests(unittest.TestCase):
                 'A readiness assessment was held in March 2025.\n\nDistribution copy.')
         source = {'citation': 1, 'accession': 'A', 'title': 'Atlas licensing audit', 'document_date': '2026-06-03', 'text': text}
         system, data, _ = pack_compact('What is the history of Atlas licensing?', [source])
-        self.assertEqual(data['sources'][0]['document_date'], '2026-06-03')
+        self.assertNotIn('document_date', data['sources'][0])
         self.assertIn('publication, not necessarily the event date', system)
         snippet, start, end = complete_excerpt(text, 'history of Atlas licensing', 240)
         self.assertEqual(snippet, text[start:end])
@@ -277,6 +289,8 @@ class InteractiveTests(unittest.TestCase):
         cited = {'sources': [{'source_id': 1, 'text': snippet}]}
         with self.assertRaisesRegex(ValueError, 'date absent'):
             check_compact_answer({'claims': [{'text': 'Atlas applied in 2026.', 'source_ids': [1]}]}, cited)
+        with self.assertRaisesRegex(ValueError, 'month absent'):
+            check_compact_answer({'claims': [{'text': 'Atlas requested an assessment in July 2025.', 'source_ids': [1]}]}, cited)
         with self.assertRaisesRegex(ValueError, 'mid-sentence'):
             check_compact_answer({'claims': [{'text': 'The NRC reviewed the combined license application submitted by this company in order', 'source_ids': [1]}]}, cited)
 

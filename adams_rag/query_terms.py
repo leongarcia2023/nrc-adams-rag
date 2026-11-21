@@ -32,8 +32,14 @@ def inquiry_kind(question):
 
 
 def content_words(question):
-    return list(dict.fromkeys(w.lower() for w in re.findall(r'[A-Za-z0-9]+', question)
-                             if len(w) > 1 and w.lower() not in QUESTION_WORDS))[:24]
+    words = list(dict.fromkeys(w.lower() for w in re.findall(r'[A-Za-z0-9]+', question)
+                              if len(w) > 1 and w.lower() not in QUESTION_WORDS))[:24]
+    # Applicants often say "reapply" where NRC correspondence says "resubmit".
+    if any(w.startswith('reappl') for w in words):
+        words.extend(w for w in ('resubmit', 'resubmission') if w not in words)
+    elif any(w.startswith(('resubmit', 'resubmission')) for w in words):
+        words.append('reapply')
+    return words
 
 
 def question_facets(question):

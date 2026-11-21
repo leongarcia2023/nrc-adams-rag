@@ -245,13 +245,17 @@ Evidence selection distinguishes history, status, comparison, requirements,
 enumeration and document summaries. Named-document questions search passage bodies
 for their separate parts. Comparisons reserve evidence for both subjects or
 technical concepts. A bounded context can still omit important facts. In addition
-to citation validation, the CPU adapter rejects unfinished sentences and years
+to citation validation, the CPU adapter rejects unfinished sentences, years and months
 absent from cited context; these checks do not verify entailment or correctness.
 The constrained CPU path asks for one short statement per source and assigns its
 citation in code. It does not let a statement borrow a citation from another
 passage. History, current-status and enumeration answers always disclose the
 limits of selected excerpts. This concise mode is a resource tradeoff, not a
 replacement for a capable synthesis model on a properly provisioned service.
+For a single-document question it reads two longer passages instead of three
+shorter ones. Licensing searches recognize "reapply" and "resubmit" as related
+wording. History prompts omit publication dates for retrospective letters and
+reports, keeping dates from the actual source text separate from report timing.
 
 Set `NRC_LIVE_RETRIEVAL=1` in the private workspace environment to allow bounded
 NRC APS lookups for user questions. The default launcher remains offline. Live
