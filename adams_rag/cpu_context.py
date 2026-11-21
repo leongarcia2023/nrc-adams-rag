@@ -193,6 +193,10 @@ def check_compact_answer(answer, data):
                     pass
         if any(not re.search(r'\b' + month + r'\b', support, re.I) for month in months):
             raise ValueError('The answer includes a month absent from its cited excerpts; answer withheld')
+        no_evaluation = r'\b(?:without|not|never)\s+(?:having\s+)?(?:evaluat\w*|review\w*|assess\w*)\b'
+        if (re.search(no_evaluation, text, re.I) and re.search(r'\bno\s+findings\b', support, re.I)
+                and not re.search(no_evaluation, support, re.I)):
+            raise ValueError('The answer equates no findings with no evaluation; answer withheld')
         # Narrow, observable modality check: future reviews must not turn into
         # completed/started/scheduled events. This is not general entailment.
         for noun in ('review', 'assessment'):

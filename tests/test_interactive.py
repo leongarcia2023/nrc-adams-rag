@@ -312,6 +312,12 @@ class InteractiveTests(unittest.TestCase):
             check_compact_answer({'claims': [{'text': 'The application was docketed and its technical review initiated.', 'source_ids': [1]}]}, data)
         check_compact_answer({'claims': [{'text': 'The NRC will perform a detailed technical review.', 'source_ids': [1]}]}, data)
 
+    def test_no_findings_does_not_mean_no_review_took_place(self):
+        data = {'sources': [{'source_id': 1, 'text': 'The staff made no findings regarding safety. The denial is not a determination on the merits.'}]}
+        with self.assertRaisesRegex(ValueError, 'no findings with no evaluation'):
+            check_compact_answer({'claims': [{'text': 'The application was denied without evaluating safety or design merits.', 'source_ids': [1]}]}, data)
+        check_compact_answer({'claims': [{'text': 'The staff made no findings regarding safety.', 'source_ids': [1]}]}, data)
+
     def test_comment_cannot_be_presented_as_unqualified_current_rule(self):
         from adams_rag.cpu_context import notes_answer
         source = {'citation': 1, 'accession': 'C', 'title': 'Comments on petition for rulemaking',
