@@ -2,7 +2,7 @@
 import re
 
 QUESTION_WORDS = set('a an the what which where when how why is are was were does do did can could would should tell me show explain summarize compare and or with for of on in at their its about latest current far along to get attempting please history timeline overview give describe has have had happens happened difference differences between versus vs list find all any information documents records document record there this that these those from into regarding want know looking understand'.split())
-QUESTION_WORDS.update('nrc adams database under according pursuant'.split())
+QUESTION_WORDS.update('nrc adams database under according pursuant differ different'.split())
 
 LICENSING = re.compile(r'\b(?:licens\w*|permit\w*)\b', re.I)
 HISTORY = re.compile(r'\b(?:history|historical|timeline|chronolog\w*|over time)\b', re.I)
@@ -34,6 +34,21 @@ def inquiry_kind(question):
 def content_words(question):
     return list(dict.fromkeys(w.lower() for w in re.findall(r'[A-Za-z0-9]+', question)
                              if len(w) > 1 and w.lower() not in QUESTION_WORDS))[:24]
+
+
+def question_facets(question):
+    """Small, inspectable search facets; no model call or invented entities."""
+    parts = re.split(r'[?;]|\band\s+(?=(?:can|could|what|why|when|how|does|did|is|are|would|should)\b)', question, flags=re.I)
+    comparison = re.search(r'\b(?:how\s+does|how\s+do)\s+(.+?)\s+differ\s+from\s+(.+?)[?.!]*$', question, re.I)
+    if comparison:
+        parts = list(comparison.groups())
+    facets = []
+    for part in parts:
+        part = re.sub(r'\bML\d{5}[A-Z0-9]\d{3}\b', '', part, flags=re.I)
+        words = content_words(part)
+        if words:
+            facets.append(' '.join(words))
+    return list(dict.fromkeys(facets))[:3]
 
 
 def inquiry_order(rows, question):

@@ -424,6 +424,24 @@ class Store:
             " ORDER BY identifier_hits DESC,bm25(chunks_fts,1.0,2.0,4.0) LIMIT ?",
             (*identifiers, expression, *filters, limit))]
 
+    def scoped_lexical(self, accessions, question, limit=30, docket=None, date_from=None, date_to=None):
+        """Search passage bodies inside named documents without title/ID repetition."""
+        accessions = sorted(set(accessions))[:8]
+        expression = self._fts_expression(question)
+        if not accessions or not expression:
+            return []
+        where, filters = self._retrieval_filters(docket, date_from, date_to)
+        marks = ','.join('?' for _ in accessions)
+        return [dict(row) for row in self.db.execute('''WITH scoped AS MATERIALIZED (
+            SELECT id FROM chunks WHERE accession IN (''' + marks + ''')),
+            ranked AS MATERIALIZED (
+            SELECT scoped.id,bm25(chunks_fts) AS score FROM scoped CROSS JOIN chunks_fts
+            WHERE chunks_fts.rowid=scoped.id AND chunks_fts MATCH ? ORDER BY score LIMIT ?)
+            SELECT c.*,d.title,d.url,d.provenance,d.document_date,ranked.score
+            FROM ranked JOIN chunks c ON c.id=ranked.id JOIN documents d ON d.accession=c.accession
+            WHERE 1=1''' + where + ' ORDER BY ranked.score',
+            (*accessions, 'text : (' + expression + ')', limit, *filters))]
+
     @staticmethod
     def _fts_expression(question):
         from .query_terms import QUESTION_WORDS

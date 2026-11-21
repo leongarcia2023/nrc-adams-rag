@@ -233,6 +233,14 @@ def rank_candidates(store, question, semantic=None, docket=None, date_from=None,
             scores[row['id']] = scores.get(row['id'], 0) + .04
     # Explicitly requested accessions must not be displaced by broad semantic neighbors.
     direct = {a.upper() for a in ACCESSION.findall(question)}
+    from .query_terms import question_facets
+    if direct:
+        # Accession/title matches must not crowd out the body passages that
+        # answer each part of a named-document question.
+        for facet in question_facets(question):
+            for rank, row in enumerate(store.scoped_lexical(direct, facet, 30, docket, date_from, date_to)):
+                by_id[row['id']] = row
+                scores[row['id']] = scores.get(row['id'], 0) + .08 / (1 + rank)
     if direct and re.search(r"\b(summariz\w*|summary|overview|purpose)\b", question, re.I):
         # Accession matches alone favor short fragments. A named-document overview
         # also needs its opening passage, where cover letters state purpose and date.

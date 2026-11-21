@@ -175,6 +175,24 @@ class InteractiveTests(unittest.TestCase):
         for question, kind in examples.items():
             self.assertEqual(inquiry_kind(question), kind)
 
+    def test_named_document_retrieval_answers_followup_from_body(self):
+        from adams_rag.query_terms import question_facets
+        from adams_rag.research import hybrid_retrieve
+        question = 'Summarize ML21357A034. Why did the NRC deny the application, and could the company reapply?'
+        self.assertIn('company reapply', question_facets(question))
+        with tempfile.TemporaryDirectory() as root:
+            store = Store(Path(root) / 'research.sqlite')
+            try:
+                with store.db:
+                    store.put({'AccessionNumber': 'ML21357A034', 'DocumentTitle': 'Denial of application',
+                        'content': 'The NRC denied the application for missing information. ' + 'Administrative background. ' * 1000
+                            + 'The company may reapply in a new application. This decision is without prejudice.'})
+                rows = hybrid_retrieve(store, question)
+                self.assertTrue(any('may reapply' in row['text'] for row in rows[:3]))
+                self.assertTrue(all(row['accession'] == 'ML21357A034' for row in rows))
+            finally:
+                store.db.close()
+
     def test_report_dates_are_not_event_dates_and_unfinished_answers_are_rejected(self):
         text = ('June 3, 2026\n\nDistribution and administrative header.\n\n'
                 'By letter dated February 21, 2025, Atlas indicated its intention to submit a license application in two phases. '
