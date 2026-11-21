@@ -4,8 +4,9 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from adams_rag.chunk_migrate import migrate, repack_chunks
+from adams_rag.chunk_migrate import convert_document, migrate, repack_chunks
 from adams_rag.chunk_storage import MARKER, install_reader
 from adams_rag.evidence import SourceBindings, saved_run_view
 from adams_rag.markdown_archive import export_batch, setup as markdown_setup
@@ -148,6 +149,28 @@ class ChunkStorageTests(unittest.TestCase):
             self.assertEqual([dict(r) for r in db.execute('SELECT * FROM chunks ORDER BY id')],before)
         finally:
             db.close()
+
+    def test_interrupted_batch_rolls_back_chunks_cursor_and_trigger_together(self):
+        with self.store.db:
+            self.store.put({'AccessionNumber':'TWO','DocumentTitle':'Second','content':'Second retained document.'})
+            self.store.db.execute('CREATE TABLE migration_observer(value INTEGER)')
+            self.store.db.execute('''CREATE TRIGGER window_source_chunk_update_v1 AFTER UPDATE ON chunks
+                BEGIN INSERT INTO migration_observer VALUES(new.id); END''')
+        before = self.chunks()
+        def interrupted(store, accession):
+            if accession == 'TWO':
+                raise RuntimeError('injected interruption')
+            return convert_document(store, accession)
+        with patch('adams_rag.chunk_migrate.convert_document', side_effect=interrupted):
+            with self.assertRaisesRegex(RuntimeError, 'injected interruption'):
+                migrate(self.store, batch_size=2)
+        self.assertEqual(self.chunks(), before)
+        self.assertEqual(self.store.db.execute("SELECT count(*) FROM chunks WHERE typeof(text)='blob'").fetchone()[0], 0)
+        self.assertEqual(tuple(self.store.db.execute('SELECT documents,chunks,last_accession FROM chunk_migration').fetchone()), (0,0,''))
+        self.assertTrue(self.store.db.execute("SELECT 1 FROM sqlite_master WHERE name='window_source_chunk_update_v1'").fetchone())
+        result = migrate(self.store, batch_size=2)
+        self.assertEqual(result['chunks'], len(before))
+        self.assertEqual(self.store.db.execute('SELECT count(*) FROM migration_observer').fetchone()[0], 0)
 
     def test_repack_preserves_external_view_and_rolls_back_on_foreign_key_failure(self):
         migrate(self.store)

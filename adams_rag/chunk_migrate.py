@@ -87,6 +87,10 @@ def migrate(store, *, batch_size=100, max_documents=None, report=None):
                 store.db.execute("UPDATE chunk_migration SET state='complete' WHERE id=1")
             break
         with store.db:
+            # The connection context does not itself start a transaction.
+            # Begin before DDL/savepoints so releasing a document savepoint
+            # cannot commit it ahead of the batch cursor or trigger restore.
+            store.db.execute('BEGIN IMMEDIATE')
             # This is a physical representation change, not new embedding input.
             # Suppress only this invalidation trigger, in the same transaction.
             trigger = store.db.execute("SELECT sql FROM sqlite_master WHERE type='trigger' AND name='window_source_chunk_update_v1'").fetchone()
