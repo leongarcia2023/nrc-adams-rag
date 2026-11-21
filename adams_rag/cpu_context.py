@@ -149,7 +149,7 @@ def pack_compact(question, evidence, budget=COMPACT_BYTE_LIMIT):
             header['source_role'] = 'guidance'
         # Retrospective letters/reports can be published months after an event.
         # Their publication date must not become the date of a requested review.
-        if kind != 'history' or re.search(r'\b(?:news|press)\s+release\b', source['title'], re.I):
+        if re.search(r'\b(?:news|press)\s+release\b', source['title'], re.I):
             header['document_date'] = source.get('document_date')
     available = budget - byte_length(COMPACT_SYSTEM, {**data, 'sources': headers}) - 80
     allowance = min(1100, available // len(candidates))
@@ -200,10 +200,10 @@ def check_compact_answer(answer, data):
         # Narrow, observable modality check: future reviews must not turn into
         # completed/started/scheduled events. This is not general entailment.
         for noun in ('review', 'assessment'):
-            for verb in ('initiated', 'started', 'completed', 'concluded', 'scheduled'):
+            for verb in ('initiated', 'started', 'completed', 'concluded', 'scheduled', 'began', 'begun', 'underway', 'proceeding'):
                 pattern = rf'\b{verb}\b[^.!?]{{0,50}}\b{noun}\b|\b{noun}\b\s+(?:(?:was|is|has been)\s+)?{verb}\b'
                 if re.search(pattern, text, re.I) and not re.search(pattern, support, re.I):
-                    future = rf'\b(?:will|would|plans? to|requested|requesting)\b[^.!?]{{0,100}}\b{noun}\b'
+                    future = rf'\b(?:will|would|plans? to|requested|requesting|to proceed with)\b[^.!?]{{0,100}}\b{noun}\b'
                     if re.search(future, support, re.I):
                         raise ValueError('The answer turns a planned review into a completed or confirmed event; answer withheld')
 

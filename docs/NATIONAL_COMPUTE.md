@@ -254,7 +254,7 @@ limits of selected excerpts. This concise mode is a resource tradeoff, not a
 replacement for a capable synthesis model on a properly provisioned service.
 For a single-document question it reads two longer passages instead of three
 shorter ones. Licensing searches recognize "reapply" and "resubmit" as related
-wording. History prompts omit publication dates for retrospective letters and
+wording. CPU prompts omit publication dates for letters and
 reports, keeping dates from the actual source text separate from report timing.
 Letter address blocks and regulatory section headings are excluded when a
 substantive body is available. Comments/proposals and guidance retain explicit

@@ -311,6 +311,16 @@ class InteractiveTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'planned review'):
             check_compact_answer({'claims': [{'text': 'The application was docketed and its technical review initiated.', 'source_ids': [1]}]}, data)
         check_compact_answer({'claims': [{'text': 'The NRC will perform a detailed technical review.', 'source_ids': [1]}]}, data)
+        data['sources'][0]['text'] = 'The staff found sufficient information to proceed with a detailed technical review.'
+        with self.assertRaisesRegex(ValueError, 'planned review'):
+            check_compact_answer({'claims': [{'text': 'A detailed technical review is underway.', 'source_ids': [1]}]}, data)
+
+    def test_letter_publication_date_is_not_supplied_as_status_event_date(self):
+        source = {'citation': 1, 'accession': 'A', 'title': 'Application acceptance determination',
+                  'document_date': '2026-10-29', 'text': 'The application was accepted for review on October 28, 2026.'}
+        _, data, _ = pack_compact('What is the current application status?', [source])
+        self.assertNotIn('document_date', data['sources'][0])
+        self.assertIn('October 28', data['sources'][0]['text'])
 
     def test_no_findings_does_not_mean_no_review_took_place(self):
         data = {'sources': [{'source_id': 1, 'text': 'The staff made no findings regarding safety. The denial is not a determination on the merits.'}]}
