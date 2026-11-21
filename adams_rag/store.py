@@ -426,15 +426,18 @@ class Store:
 
     @staticmethod
     def _fts_expression(question):
+        from .query_terms import QUESTION_WORDS
         tokens = list(dict.fromkeys(re.findall(r"[A-Za-z0-9]+", question)))[:40]
         stop = {"a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in", "is", "it", "of", "on", "or", "that", "the", "to", "was", "were", "what", "when", "where", "which", "with", "did", "does", "how"}
-        tokens = [t for t in tokens if t.lower() not in stop]
+        tokens = [t for t in tokens if t.lower() not in stop | QUESTION_WORDS]
         return " OR ".join('"' + t + '"' for t in tokens)
 
-    def lexical(self, question, limit=30, docket=None, date_from=None, date_to=None, *, title_only=False, topic_only=False):
+    def lexical(self, question, limit=30, docket=None, date_from=None, date_to=None, *, title_only=False, topic_only=False, require_all=False):
         from .query_terms import subject_phrases, phrase_expression, topic_expression
         phrases = subject_phrases(question) if not re.search(r'\bML\d{5}[A-Z0-9]\d{3}\b', question, re.I) else []
         expression = phrase_expression(phrases) if phrases else self._fts_expression(question)
+        if require_all and not phrases:
+            expression = expression.replace(' OR ', ' AND ')
         if not expression:
             return []
         if title_only:

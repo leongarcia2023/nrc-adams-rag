@@ -1,15 +1,55 @@
 """Conservative phrase anchors for names in otherwise ordinary questions."""
 import re
 
-QUESTION_WORDS = set('a an the what which where when how why is are was were does do did can could would should tell me show explain summarize compare and or with for of on in at their its about latest current far along to get attempting please history timeline overview give describe has have had'.split())
+QUESTION_WORDS = set('a an the what which where when how why is are was were does do did can could would should tell me show explain summarize compare and or with for of on in at their its about latest current far along to get attempting please history timeline overview give describe has have had happens happened difference differences between versus vs list find all any information documents records document record there this that these those from into regarding want know looking understand'.split())
 
 LICENSING = re.compile(r'\b(?:licens\w*|permit\w*)\b', re.I)
 HISTORY = re.compile(r'\b(?:history|historical|timeline|chronolog\w*|over time)\b', re.I)
+COMPARISON = re.compile(r'\b(?:compare|compar\w*|difference\w*|versus|vs\.?|differ)\b', re.I)
+CURRENT = re.compile(r'\b(?:latest|current|today|recent|status|progress)\b|how far', re.I)
 MILESTONE = re.compile(r'\b(?:accept\w*|deni\w*|reject\w*|withdraw\w*|resubmit\w*|issu\w*|approv\w*|application|pre.application|preapplication|readiness|licens\w*|permit\w*)\b', re.I)
 
 
 def history_question(question):
     return bool(HISTORY.search(question))
+
+
+def inquiry_kind(question):
+    if COMPARISON.search(question):
+        return 'comparison'
+    if history_question(question):
+        return 'history'
+    if CURRENT.search(question):
+        return 'status'
+    if re.search(r'\b(?:how many|count|total number|every|list all)\b', question, re.I):
+        return 'enumeration'
+    if re.search(r'\b(?:require\w*|must|shall|obligations|criteria|deadline\w*)\b', question, re.I):
+        return 'requirements'
+    if re.search(r'\b(?:summari\w*|summary|overview|purpose)\b', question, re.I):
+        return 'summary'
+    return 'explanation'
+
+
+def content_words(question):
+    return list(dict.fromkeys(w.lower() for w in re.findall(r'[A-Za-z0-9]+', question)
+                             if len(w) > 1 and w.lower() not in QUESTION_WORDS))[:24]
+
+
+def inquiry_order(rows, question):
+    """Reserve evidence for both sides of a comparison and recent status records."""
+    kind, chosen = inquiry_kind(question), []
+    if kind == 'comparison':
+        for phrase in subject_phrases(question):
+            match = next((r for r in rows if contains_subject(r['title'], [phrase])
+                          or contains_subject(r['text'], [phrase], proper_names=True)), None)
+            if match is not None and match not in chosen:
+                chosen.append(match)
+    elif kind == 'status' and rows:
+        best = rows[0].get('retrieval_score', 0)
+        relevant = [r for r in rows if r.get('document_date') and r.get('retrieval_score', 0) >= best * .65]
+        if relevant:
+            chosen.append(max(relevant, key=lambda r: r['document_date']))
+    return chosen + [r for r in rows if r not in chosen]
 
 
 def decision_title(title):

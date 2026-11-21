@@ -138,7 +138,7 @@ class WindowIndex:
             if not published:
                 graph.unlink(missing_ok=True)
 
-    def ensure(self):
+    def ensure(self, read_only=False):
         from usearch.index import Index
         with read_snapshot(self.db):
             snapshot = self.snapshot()
@@ -147,19 +147,23 @@ class WindowIndex:
             with self.lock_path.open('a') as lock:
                 fcntl.flock(lock, fcntl.LOCK_EX)
                 previous = self._manifest()
-                if previous and all(previous.get(k) == v for k,v in snapshot.items()):
+                compatible = (previous and all(previous.get(k) == v for k,v in snapshot.items() if k != 'generation')
+                              and type(previous.get('generation')) is int and previous['generation'] <= snapshot['generation'])
+                if compatible and (read_only or previous['generation'] == snapshot['generation']):
                     index = Index.restore(str(self.directory / previous['graph']), view=True)
-                    if len(index) == previous.get('vectors') == self.count():
-                        self.index, self.loaded = index, snapshot
+                    if len(index) == previous.get('vectors') and (read_only or len(index) == self.count()):
+                        self.index, self.loaded = index, {**snapshot, 'generation': previous['generation']}
                         return
+                if read_only:
+                    raise RuntimeError('No compatible published window index; using keyword search until background publication')
                 self._build(snapshot, previous)
 
-    def candidates(self, vector, limit=80):
+    def candidates(self, vector, limit=80, read_only=False):
         vector = query_vector(vector)
         if type(limit) is not int or not 1 <= limit <= 1000:
             raise ValueError('Use 1–1,000 parent passages')
         with read_snapshot(self.db):
-            self.ensure()
+            self.ensure(read_only=read_only)
             if not len(self.index):
                 return []
             count = min(len(self.index), 4096, max(128, limit * 32))
@@ -202,7 +206,7 @@ class WindowSemanticIndex(SemanticIndex):
         vector = query_vector(next(iter(self._encoder().query_embed(question))))
         with read_snapshot(self.store.db):
             base = super().search_vector(vector, min(1000, limit * 4), docket, date_from, date_to)
-            additional = self.window_index.candidates(vector, limit)
+            additional = self.window_index.candidates(vector, limit, read_only=self.read_only)
             merged = {}
             for row in base + additional:
                 if matches_filters(row, docket, date_from, date_to):

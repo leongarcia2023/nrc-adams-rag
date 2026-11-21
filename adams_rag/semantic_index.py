@@ -68,6 +68,7 @@ class SemanticIndex:
         self.encoder = encoder
         self.index = None
         self.generation = None
+        self.read_only = False
         self.key = hashlib.sha256(model.encode()).hexdigest()[:16]
         self.path = self.directory / (self.key + ".usearch")
         self.manifest = self.directory / (self.key + ".json")
@@ -308,14 +309,26 @@ class SemanticIndex:
             return []
         generation = self.fingerprint()
         if self.generation != generation:
+            accepted_snapshot = False
             if self.path.exists() and self.manifest.exists():
                 with (self.directory / (self.key + ".lock")).open("a") as lock:
                     fcntl.flock(lock, fcntl.LOCK_SH)
                     data = json.loads(self.manifest.read_text())
-                    if data.get("generation") == generation and data.get("model") == self.model:
+                    identity = self.store.db.execute('SELECT value FROM collection_identity WHERE id=1').fetchone()[0]
+                    identity = hashlib.sha256(f'{self.store.path.resolve()}:{identity}'.encode()).hexdigest()
+                    published = data.get('snapshot_generation')
+                    latest = self.store.db.execute('SELECT generation FROM vector_generations WHERE model=?', (self.model,)).fetchone()[0]
+                    compatible = (data.get('tracking_version') == 1 and data.get('identity') == identity
+                                  and type(published) is int and 0 <= published <= latest)
+                    if (data.get("model") == self.model and compatible
+                            and (data.get('generation') == generation or self.read_only)):
                         self.index = Index.restore(str(self.path), view=True)
-                        self.generation = generation
-            if self.generation != generation:
+                        self.generation = data['generation']
+                        accepted_snapshot = True
+            self.published_index_stale = self.generation != generation
+            if self.generation != generation and not (self.read_only and accepted_snapshot):
+                if self.read_only:
+                    raise RuntimeError('No compatible published semantic index; using keyword search while the background index catches up')
                 self.rebuild(incremental=True)
         vector = np.asarray(vector, dtype=np.float32)
         if vector.ndim != 1 or not len(vector) or not np.isfinite(vector).all() or np.linalg.norm(vector) == 0:

@@ -68,8 +68,11 @@ def related_accessions(document):
 
 
 def search_live(store, client, question, queries, *, docket=None, date_from=None, date_to=None,
-                max_documents=8, progress=None, resolved_accessions=None, legacy_scope=False):
+                max_documents=8, progress=None, resolved_accessions=None, legacy_scope=False,
+                reuse_cached=False):
     summary = {"queries": [], "discovered": 0, "fetched": [], "missing_text": [], "relationships": [], "warnings": []}
+    if reuse_cached:
+        summary['cached'] = []
     candidates, scores, legacy_records = {}, {}, {}
     direct = list(dict.fromkeys(a.upper() for a in ACCESSION.findall(question)))[:8]
     direct.extend(a for a in (resolved_accessions or []) if a not in direct)
@@ -99,7 +102,7 @@ def search_live(store, client, question, queries, *, docket=None, date_from=None
                         # Do not replace a fully acquired record and invalidate its
                         # extraction gate for documents we will not hydrate here.
                         # Only Get Document may refresh an indexed source in this flow.
-                        if not existing or existing['status'] != 'indexed':
+                        if not reuse_cached and (not existing or existing['status'] != 'indexed'):
                             store.put(doc, "api_search_excerpt")
                         if is_legacy(doc):
                             key = source_key(doc)
@@ -131,6 +134,16 @@ def search_live(store, client, question, queries, *, docket=None, date_from=None
         if accession in attempted:
             continue
         attempted.add(accession)
+        if reuse_cached:
+            existing = store.db.execute('SELECT status,metadata,title,document_date FROM documents WHERE accession=?', (accession,)).fetchone()
+            hit = candidates.get(accession, {})
+            if (existing and existing['status'] == 'indexed'
+                    and (not hit.get('DocumentTitle') or hit['DocumentTitle'] == existing['title'])
+                    and (not hit.get('DocumentDate') or str(hit['DocumentDate'])[:10] == str(existing['document_date'])[:10])):
+                summary['cached'].append(accession)
+                summary['relationships'].extend({'source': accession, **r}
+                    for r in related_accessions(json.loads(existing['metadata'])))
+                continue
         try:
             require_space(store.path.parent)
         except StoragePause as error:
@@ -164,6 +177,8 @@ def search_live(store, client, question, queries, *, docket=None, date_from=None
             if isinstance(error, BudgetStop):
                 break
     summary["attempted"] = len(attempted)
+    if summary.get('cached'):
+        summary['warnings'].append(f"Reused {len(summary['cached'])} previously downloaded full texts; live discovery does not verify that cached document content is unchanged.")
     summary["exhaustive"] = False
     return summary
 
@@ -175,6 +190,12 @@ def rank_candidates(store, question, semantic=None, docket=None, date_from=None,
     topics = topic_terms(question, phrases) if phrases else set()
     lexical = store.lexical(question, 200, docket, date_from, date_to)
     rankings = [lexical]
+    if not phrases:
+        # A second, conjunctive channel keeps generic regulatory words from
+        # displacing passages containing the whole requested technical concept.
+        from .query_terms import content_words
+        if 2 <= len(content_words(question)) <= 8:
+            rankings.append(store.lexical(question, 100, docket, date_from, date_to, require_all=True))
     if phrases:
         # Independently retrieve named-title passages so thousands of ordinary
         # uses of the same words cannot displace the company's own records.
@@ -287,6 +308,8 @@ def _hybrid_retrieve(store, question, semantic, top_k, docket, date_from, date_t
             else:
                 seen_documents.add(row['accession']); first.append(row)
         ranked = history_order(first) + rest
+    from .query_terms import inquiry_order
+    ranked = inquiry_order(ranked, question)
     direct = {a.upper() for a in ACCESSION.findall(question)}
     if direct or scope_accessions is not None:
         allowed = {a.casefold() for a in (scope_accessions if scope_accessions is not None else direct | set(focus or []))}
@@ -380,13 +403,14 @@ def catalog_coverage(path):
 
 def research(store, question, *, engine=None, semantic=None, client=None, catalog=None,
              live=True, docket=None, date_from=None, date_to=None, top_k=10, max_documents=8,
-             generate=True, progress=None, evidence_ready=None):
+             generate=True, progress=None, evidence_ready=None, interactive=False):
     if not isinstance(question, str) or not 1 <= len(question.strip()) <= 2000:
         raise ValueError("Enter a question between 1 and 2,000 characters")
     if not 1 <= top_k <= 20 or not 1 <= max_documents <= 20:
         raise ValueError("Retrieval limits must be between 1 and 20")
     validate_filters(docket, date_from, date_to)
     started = time.monotonic()
+    timings = {}
     warnings, queries = [], fallback_queries(question)
     legacy_resolutions, resolved_accessions, scope = [], [], None
     if catalog and Path(catalog).is_file():
@@ -423,7 +447,8 @@ def research(store, question, *, engine=None, semantic=None, client=None, catalo
     if live and client:
         discovery = search_live(store, client, question, queries, docket=docket, date_from=date_from,
                                 date_to=date_to, max_documents=max_documents, progress=progress,
-                                resolved_accessions=resolved_accessions, legacy_scope=bool(legacy_resolutions))
+                                resolved_accessions=resolved_accessions, legacy_scope=bool(legacy_resolutions),
+                                reuse_cached=interactive)
         warnings.extend(discovery["warnings"])
     elif live:
         warnings.append("ADAMS is not connected; this run searches only the local collection.")
@@ -435,7 +460,8 @@ def research(store, question, *, engine=None, semantic=None, client=None, catalo
             discovery['markdown_checked'] = prepare_fetched(store, discovery['fetched'])
         except (RuntimeError, ValueError, OSError) as error:
             warnings.append(f'New records remain subject to the extraction holdout policy: {error}')
-    if semantic and discovery and discovery["fetched"]:
+    timings['discovery_seconds'] = round(time.monotonic() - started, 3)
+    if semantic and discovery and discovery["fetched"] and not interactive:
         if progress:
             progress("Updating the semantic index", "Indexing newly read documents")
         try:
@@ -444,21 +470,25 @@ def research(store, question, *, engine=None, semantic=None, client=None, catalo
             warnings.append(f"New text is available to keyword search; semantic indexing failed: {error}")
     if progress:
         progress("Retrieving evidence", "Combining exact terms and semantic matches")
+    retrieval_started = time.monotonic()
     retrieval_question = question + (" " + " ".join(resolved_accessions) if resolved_accessions else "")
     if scope is not None and discovery:
-        scope.update(discovery["fetched"])
+        scope.update(discovery["fetched"] + discovery.get('cached', []))
+    focus = discovery['fetched'] + discovery.get('cached', []) if discovery else None
     exclusions, source_issues = [], []
     semantic_failed = False
     try:
         evidence = hybrid_retrieve(store, retrieval_question, semantic, top_k, docket, date_from, date_to,
-                                   discovery["fetched"] if discovery else None, scope_accessions=scope, exclusions=exclusions,
+                                   focus, scope_accessions=scope, exclusions=exclusions,
                                    source_issues=source_issues)
     except (ValueError, RuntimeError, OSError) as error:
         semantic_failed = True
         warnings.append(f"Using keyword retrieval: {error}")
         evidence = hybrid_retrieve(store, retrieval_question, None, top_k, docket, date_from, date_to,
-                                   discovery["fetched"] if discovery else None,
+                                   focus,
                                    scope_accessions=scope, exclusions=exclusions, source_issues=source_issues)
+    if getattr(semantic, 'published_index_stale', False):
+        warnings.append('Semantic search used the last published index; new unembedded passages remain available to keyword search.')
     exclusions = list({(r["accession"],r["text_hash"],r["page"]):r for r in exclusions}.values())
     if exclusions:
         warnings.append(f"Known extraction errors or pending verification excluded {len(exclusions)} page/document entries from answer evidence; see the recorded holdout reasons.")
@@ -469,10 +499,12 @@ def research(store, question, *, engine=None, semantic=None, client=None, catalo
     for accession, quality in source_quality.items():
         if quality.get("flags"):
             warnings.append(accession + ": " + " ".join(MESSAGES.get(flag, "Additional extraction diagnostic: " + flag) for flag in quality["flags"]))
+    timings['retrieval_seconds'] = round(time.monotonic() - retrieval_started, 3)
+    from .interactive import coverage_snapshot
     result = {"id": str(uuid.uuid4()), "question": question, "mode": "evidence_only", "answer": None,
               "sources": evidence, "source_quality": source_quality, "excluded_evidence": exclusions,
               "provenance_issues": source_issues,
-              "discovery": discovery, "coverage": store.status(),
+              "discovery": discovery, "coverage": coverage_snapshot(store) if interactive else store.status(),
               "semantic_retrieval": {"requested_model": getattr(semantic, "model", None),
                                      "keyword_fallback": semantic_failed},
               "catalog": catalog_coverage(catalog), "warnings": warnings, "queries": queries,
@@ -489,8 +521,12 @@ def research(store, question, *, engine=None, semantic=None, client=None, catalo
         result['subject_phrases'] = subject_phrases(question)
     if not live:
         warnings.append('This run searched the downloaded collection only; current NRC updates were not checked.')
+    from .query_terms import inquiry_kind
+    result['inquiry_kind'] = inquiry_kind(question)
     if evidence_ready:
         evidence_ready(result)
+    timings['evidence_ready_seconds'] = round(time.monotonic() - started, 3)
+    generation_started = time.monotonic()
     if not evidence:
         result.update(answer="No supporting passages were found in this bounded retrieval. This does not establish that ADAMS has no answer.", insufficient_evidence=True)
     elif generate and engine:
@@ -506,6 +542,8 @@ def research(store, question, *, engine=None, semantic=None, client=None, catalo
             warnings.append(f"Generated answer withheld: {error}")
     elif generate:
         warnings.append("The answer model is not ready. Retrieved context is returned without generation.")
+    timings['generation_seconds'] = round(time.monotonic() - generation_started, 3)
+    result['timings'] = timings
     result["elapsed_seconds"] = round(time.monotonic() - started, 2)
     store.db.execute("CREATE TABLE IF NOT EXISTS research_runs(id TEXT PRIMARY KEY, created TEXT, result TEXT)")
     with store.db:

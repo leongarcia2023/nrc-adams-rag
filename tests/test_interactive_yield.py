@@ -44,6 +44,29 @@ class InteractiveYieldTests(unittest.TestCase):
         self.store.db.close()
         self.tmp.cleanup()
 
+    def test_read_only_query_uses_published_graph_without_storage_and_rechecks_deletions(self):
+        self.index.sync()
+        before = self.index.manifest.read_bytes()
+        with self.store.db:
+            self.store.db.execute("DELETE FROM documents WHERE accession='BASE0'")
+            self.store.put({'AccessionNumber': 'NEW', 'content': 'A new valve record not yet embedded.'})
+        reader = SemanticIndex(self.store, self.root / 'index', 'test-yield', Encoder())
+        reader.read_only = True
+        with patch('adams_rag.semantic_index.require_space', side_effect=StoragePause('full')):
+            matches = reader.search('valve', limit=50)
+        self.assertEqual([r['accession'] for r in matches], ['BASE1'])
+        self.assertEqual(self.index.manifest.read_bytes(), before)
+
+    def test_read_only_query_rejects_graph_from_another_collection(self):
+        self.index.sync()
+        data = json.loads(self.index.manifest.read_text())
+        data['identity'] = 'wrong-collection'
+        self.index.manifest.write_text(json.dumps(data))
+        reader = SemanticIndex(self.store, self.root / 'index', 'test-yield', Encoder())
+        reader.read_only = True
+        with self.assertRaisesRegex(RuntimeError, 'No compatible published'):
+            reader.search('valve')
+
     def test_queued_interactive_caller_is_detected_without_stealing_its_gate(self):
         path = self.root / 'inference.lock'
         waiting, acquired = threading.Event(), threading.Event()

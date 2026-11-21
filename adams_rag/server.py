@@ -20,6 +20,7 @@ from .research import catalog_coverage, research
 from .semantic_index import SemanticIndex, active_model, search_index, window_search_enabled
 from .store import Store
 from .transport import PersistentOpener
+from .interactive import AnswerCache, cache_key, collection_revision, coverage_snapshot
 
 
 class Application:
@@ -36,12 +37,13 @@ class Application:
         self.pool = ThreadPoolExecutor(max_workers=1)
         self.lock = threading.Lock()
         self.jobs = {}
+        self.answer_cache = AnswerCache()
 
     def status(self):
         store = Store(self.db)
         try:
             generation = self.engine.availability() if self.engine else {"state": "model_unavailable"}
-            return {"collection": store.status(), "catalog": catalog_coverage(self.catalog),
+            return {"collection": coverage_snapshot(store), "catalog": catalog_coverage(self.catalog),
                     "semantic_retrieval_model": active_model(self.index_dir),
                     "semantic_window_search_enabled": window_search_enabled(self.index_dir),
                     "local_model_installed": generation["state"] != "model_unavailable" and generation.get("execution") != "hosted_api",
@@ -153,7 +155,18 @@ class Application:
             if self.engine is None and model_ready(self.model_path):
                 self.engine = MLXEngine(self.model_path, storage_path=self.db.parent)
             store = Store(self.db)
+            active = active_model(self.index_dir)
+            request_key = cache_key(payload, self.engine, active)
+            request_revision = collection_revision(store)
+            cached = self.answer_cache.get(request_key, request_revision) if generate else None
+            if cached is not None:
+                with self.lock:
+                    self.jobs[job_id].update(state='finished', stage='Finished', detail='', result=cached)
+                return
             semantic = search_index(store, self.index_dir)
+            # Questions never rebuild the graph or embed downloaded batches.
+            # Published candidates are rechecked against current document text.
+            semantic.read_only = True
             if self.encoder_model == semantic.model:
                 semantic.encoder = self.encoder
             client = None
@@ -165,9 +178,11 @@ class Application:
                                      opener=transport, include_search_content=False)
             result = research(store, engine=self.engine, semantic=semantic, client=client,
                               catalog=self.catalog, generate=generate, progress=progress,
-                              evidence_ready=evidence_ready, **payload)
+                              evidence_ready=evidence_ready, interactive=True, **payload)
             self.encoder = semantic.encoder
             self.encoder_model = semantic.model
+            if generate and collection_revision(store) == request_revision:
+                self.answer_cache.put(request_key, request_revision, result)
             with self.lock:
                 self.jobs[job_id].update(state="finished", stage="Finished", detail="", result=result)
                 self.jobs[job_id].pop('preview', None)

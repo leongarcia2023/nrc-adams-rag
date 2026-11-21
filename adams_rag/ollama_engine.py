@@ -109,7 +109,7 @@ class OllamaEngine(MLXEngine):
                 "execution": "local_ollama", "resources_managed_by": "ollama",
                 "cpu_only": self.cpu_only, "num_threads": self.num_threads,
                 "keep_alive_seconds": self.keep_alive, "request_timeout_seconds": self.timeout,
-                "context_byte_limit": 4500 if self.cpu_only else None}
+                "context_byte_limit": 3400 if self.cpu_only else None}
 
     def complete(self, system, data, max_tokens=None):
         tokens = self.max_tokens if max_tokens is None else max_tokens
@@ -124,8 +124,12 @@ class OllamaEngine(MLXEngine):
                 options["num_thread"] = self.num_threads
             if self.cpu_only:
                 options["num_gpu"] = 0
+            response_format = 'json'
+            if self.cpu_only and isinstance(data, dict) and data.get('sources'):
+                from .cpu_context import answer_schema
+                response_format = answer_schema({s['source_id'] for s in data['sources']})
             response = self._post("/api/chat", {
-                "model": self.model, "stream": True, "format": "json", "keep_alive": self.keep_alive,
+                "model": self.model, "stream": True, "format": response_format, "keep_alive": self.keep_alive,
                 "options": options,
                 "messages": [{"role": "system", "content": system},
                              {"role": "user", "content": json.dumps(data, ensure_ascii=False)}],
@@ -142,8 +146,8 @@ class OllamaEngine(MLXEngine):
     def generate(self, model, question, evidence):
         if not self.cpu_only:
             return super().generate(model, question, evidence)
-        from .cpu_context import pack
-        system, data, context = pack(question, evidence)
+        from .cpu_context import pack_compact
+        system, data, context = pack_compact(question, evidence)
         result = self.complete(system, data, max_tokens=min(self.max_tokens, 384))
         answer = assemble_answer(result, len(evidence))
         supplied = {s['source_id'] for s in data['sources']}
