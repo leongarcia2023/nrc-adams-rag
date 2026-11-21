@@ -195,7 +195,11 @@ def rank_candidates(store, question, semantic=None, docket=None, date_from=None,
         # displacing passages containing the whole requested technical concept.
         from .query_terms import content_words
         if 2 <= len(content_words(question)) <= 8:
-            rankings.append(store.lexical(question, 100, docket, date_from, date_to, require_all=True))
+            focused = store.lexical(question, 100, docket, date_from, date_to, require_all=True)
+            # Do not count an identical ranking twice. Besides doing no useful
+            # reranking, that would distort the missing-embedding compensation.
+            if [r['id'] for r in focused] != [r['id'] for r in lexical[:len(focused)]]:
+                rankings.append(focused)
     if phrases:
         # Independently retrieve named-title passages so thousands of ordinary
         # uses of the same words cannot displace the company's own records.

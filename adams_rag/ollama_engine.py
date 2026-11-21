@@ -153,6 +153,8 @@ class OllamaEngine(MLXEngine):
         supplied = {s['source_id'] for s in data['sources']}
         if any(c not in supplied for claim in answer['claims'] for c in claim['source_ids']):
             raise ValueError('The model cited a passage outside its reading budget; answer withheld')
+        from .cpu_context import check_compact_answer
+        check_compact_answer(answer, data)
         answer['generation_context'] = context
         answer['generation_metrics'] = self.last_metrics
         return answer

@@ -32,10 +32,18 @@ def inference_slot(path, *, foreground=True, monitor=lambda: None, wait_seconds=
     path=Path(path)
     path.parent.mkdir(parents=True,exist_ok=True)
     with path.with_name('interactive.lock').open('a') as gate, path.open('a') as lock:
-        try:
-            fcntl.flock(gate,fcntl.LOCK_EX|fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise InferenceBusy('Another local model call is active; interactive work has priority') from None
+        # interactive_waiting() briefly probes this gate. A foreground caller
+        # must not mistake that millisecond probe for another active question.
+        gate_deadline = time.monotonic() + (.1 if foreground else 0)
+        while True:
+            try:
+                fcntl.flock(gate,fcntl.LOCK_EX|fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= gate_deadline:
+                    raise InferenceBusy('Another local model call is active; interactive work has priority') from None
+                monitor()
+                time.sleep(.005)
         deadline=time.monotonic()+wait_seconds
         while True:
             monitor()

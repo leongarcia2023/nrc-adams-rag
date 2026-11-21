@@ -14,6 +14,19 @@ from adams_rag.storage import StoragePause
 
 
 class InferenceGuardTests(unittest.TestCase):
+    def test_foreground_retries_a_transient_gate_probe(self):
+        real_flock = fcntl.flock
+        blocked = []
+        def probe_once(stream, operation):
+            if str(stream.name).endswith('interactive.lock') and not blocked:
+                blocked.append(True)
+                raise BlockingIOError()
+            return real_flock(stream, operation)
+        with tempfile.TemporaryDirectory() as directory:
+            with patch('adams_rag.inference_guard.fcntl.flock', side_effect=probe_once):
+                with inference_slot(Path(directory)/'inference.lock'):
+                    self.assertTrue(blocked)
+
     def test_real_child_returns_data_then_exits(self):
         command = [sys.executable, "-c", "import json,sys; d=json.load(sys.stdin); print(json.dumps({'ok':True,'result':{'value':d['value']}}))"]
         result = run_guarded(command, {"value": "source data"}, preflight=lambda: None, monitor=lambda: None)

@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from adams_rag.cpu_context import pack_compact, answer_schema
+from adams_rag.cpu_context import pack_compact, answer_schema, check_compact_answer, complete_excerpt
 from adams_rag.interactive import AnswerCache, cache_key, collection_revision, coverage_snapshot
 from adams_rag.markdown_archive import prepare_fetched, setup
 from adams_rag.query_terms import inquiry_kind
@@ -174,6 +174,24 @@ class InteractiveTests(unittest.TestCase):
                     'Why did the valve fail?':'explanation'}
         for question, kind in examples.items():
             self.assertEqual(inquiry_kind(question), kind)
+
+    def test_report_dates_are_not_event_dates_and_unfinished_answers_are_rejected(self):
+        text = ('June 3, 2026\n\nDistribution and administrative header.\n\n'
+                'By letter dated February 21, 2025, Atlas indicated its intention to submit a license application in two phases. '
+                'A readiness assessment was held in March 2025.\n\nDistribution copy.')
+        source = {'citation': 1, 'accession': 'A', 'title': 'Atlas licensing audit', 'document_date': '2026-06-03', 'text': text}
+        _, data, _ = pack_compact('What is the history of Atlas licensing?', [source])
+        self.assertNotIn('document_date', data['sources'][0])
+        snippet, start, end = complete_excerpt(text, 'history of Atlas licensing', 240)
+        self.assertEqual(snippet, text[start:end])
+        self.assertIn('February 21, 2025', snippet)
+        self.assertNotIn('June 3, 2026', snippet)
+        self.assertTrue(snippet.endswith('.'))
+        cited = {'sources': [{'source_id': 1, 'text': snippet}]}
+        with self.assertRaisesRegex(ValueError, 'date absent'):
+            check_compact_answer({'claims': [{'text': 'Atlas applied in 2026.', 'source_ids': [1]}]}, cited)
+        with self.assertRaisesRegex(ValueError, 'mid-sentence'):
+            check_compact_answer({'claims': [{'text': 'The NRC reviewed the combined license application submitted by this company in order', 'source_ids': [1]}]}, cited)
 
 
 if __name__ == '__main__':
