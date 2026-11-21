@@ -5,7 +5,7 @@ import sqlite3
 import tempfile
 import unittest
 
-from adams_rag.chunk_migrate import migrate
+from adams_rag.chunk_migrate import migrate, repack_chunks
 from adams_rag.chunk_storage import MARKER, install_reader
 from adams_rag.evidence import SourceBindings, saved_run_view
 from adams_rag.markdown_archive import export_batch, setup as markdown_setup
@@ -45,6 +45,12 @@ class ChunkStorageTests(unittest.TestCase):
         self.assertEqual([tuple(r) for r in self.store.db.execute('SELECT * FROM dense_vectors')], vectors)
         self.assertEqual([tuple(r) for r in self.store.db.execute('SELECT * FROM vector_generations')], generation)
         self.assertTrue(all(r[0] == 'blob' for r in self.store.db.execute('SELECT typeof(text) FROM chunks')))
+        repacked = repack_chunks(self.store)
+        self.assertEqual(repacked['chunks'],len(before))
+        self.assertEqual(self.chunks(),before)
+        self.assertEqual(hybrid_retrieve(self.store,'valve pressure'),sources)
+        self.assertEqual([tuple(r) for r in self.store.db.execute('SELECT * FROM dense_vectors')],vectors)
+        self.assertEqual(self.store.db.execute('PRAGMA foreign_keys').fetchone()[0],1)
         self.store.db.execute('VACUUM')
         self.assertEqual(self.chunks(), before)
         self.assertEqual(self.store.db.execute('PRAGMA integrity_check').fetchone()[0], 'ok')
@@ -128,6 +134,7 @@ class ChunkStorageTests(unittest.TestCase):
                 BEGIN DELETE FROM embedding_window_sets WHERE chunk_id=new.id; END''')
         n = self.store.db.execute('SELECT count(*) FROM embedding_window_sets').fetchone()[0]
         migrate(self.store)
+        repack_chunks(self.store)
         self.assertEqual(self.store.db.execute('SELECT count(*) FROM embedding_window_sets').fetchone()[0],n)
         with self.store.db:
             self.store.db.execute("UPDATE chunks SET text='changed' WHERE id=(SELECT min(id) FROM chunks)")
@@ -141,6 +148,27 @@ class ChunkStorageTests(unittest.TestCase):
             self.assertEqual([dict(r) for r in db.execute('SELECT * FROM chunks ORDER BY id')],before)
         finally:
             db.close()
+
+    def test_repack_preserves_external_view_and_rolls_back_on_foreign_key_failure(self):
+        migrate(self.store)
+        with self.store.db:
+            self.store.db.execute('CREATE VIEW visible_chunks AS SELECT id,text FROM chunks')
+            self.store.db.execute('''CREATE TRIGGER observe_document AFTER UPDATE ON documents
+                BEGIN SELECT id FROM chunks WHERE accession=new.accession; END''')
+        before=self.chunks()
+        repack_chunks(self.store)
+        self.assertEqual(self.store.db.execute('SELECT count(*) FROM visible_chunks').fetchone()[0],len(before))
+        with self.store.db:
+            self.store.db.execute('UPDATE documents SET updated=updated')
+        self.store.db.execute('PRAGMA foreign_keys=OFF')
+        with self.store.db:
+            self.store.db.execute('INSERT INTO vectors VALUES(?,?,?)',(999999,'orphan','[]'))
+        self.store.db.execute('PRAGMA foreign_keys=ON')
+        with self.assertRaisesRegex(ValueError,'foreign-key'):
+            repack_chunks(self.store)
+        self.assertEqual(self.chunks(),before)
+        self.assertEqual(self.store.db.execute('PRAGMA foreign_keys').fetchone()[0],1)
+        self.assertFalse(self.store.db.execute("SELECT 1 FROM sqlite_master WHERE name='chunks_repack_stage'").fetchone())
 
 
 if __name__ == '__main__':

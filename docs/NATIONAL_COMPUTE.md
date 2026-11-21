@@ -268,6 +268,16 @@ reusable inside SQLite; it does not itself shrink the database file. Filesystem
 free space and SQLite reusable pages must be reported separately. A host's free
 space reported for `/tmp` does not establish a workspace's ephemeral-storage quota.
 
+After conversion finishes, `--repack` rebuilds only the chunk table in a single
+transaction, comparing every raw row and checking foreign keys before committing.
+This packs small references together and makes the old pages reusable anywhere
+in the database. It preserves chunk IDs, the autoincrement sequence, indexes and
+triggers. Its free-space preflight includes the staged table and WAL; pause other
+services and retain canonical sources. A failed check rolls back the table swap.
+This is useful when there is room for the compact chunk table but not a second
+full database. Report its `reusable_bytes_after` separately from filesystem free
+space; the existing database file still occupies its allocated size.
+
 Application `Store` connections resolve both old text and compact references.
 Read-only tools that use raw SQLite must call
 `adams_rag.chunk_storage.install_reader(connection)` before consuming `text`
