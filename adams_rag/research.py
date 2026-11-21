@@ -93,7 +93,14 @@ def search_live(store, client, question, queries, *, docket=None, date_from=None
                 with store.db:
                     for rank, doc in enumerate(docs):
                         accession = doc["AccessionNumber"]
-                        store.put(doc, "api_search_excerpt")
+                        key = source_key(doc) if is_legacy(doc) else accession
+                        existing = store.db.execute('SELECT status FROM documents WHERE accession=?', (key,)).fetchone()
+                        # A discovery hit can contain different/incomplete metadata.
+                        # Do not replace a fully acquired record and invalidate its
+                        # extraction gate for documents we will not hydrate here.
+                        # Only Get Document may refresh an indexed source in this flow.
+                        if not existing or existing['status'] != 'indexed':
+                            store.put(doc, "api_search_excerpt")
                         if is_legacy(doc):
                             key = source_key(doc)
                             pending_legacy[key] = {"source_key": key, "accession": accession,

@@ -206,6 +206,34 @@ class CPUContextTests(unittest.TestCase):
             finally:
                 store.db.close()
 
+    def test_discovery_does_not_invalidate_unfetched_indexed_sources(self):
+        from adams_rag.markdown_archive import setup, prepare_fetched
+        with tempfile.TemporaryDirectory() as root:
+            store = Store(Path(root) / 'research.sqlite')
+            docs = [{'AccessionNumber': f'ML22006A26{i}', 'DocumentTitle': f'Oklo license decision {i}',
+                     'content': f'Record {i}: The NRC denied the application without prejudice.', 'DocumentDate': '2022-01-06'}
+                    for i in range(2)]
+            class Client:
+                def request(self, payload=None, accession=None):
+                    if accession:
+                        return {'document': next(d for d in docs if d['AccessionNumber'] == accession)}
+                    return {'count': 2, 'results': [{'document': {**d, 'SearchOnlyField': 'discovery', 'content': 'snippet'}} for d in docs]}
+            try:
+                setup(store.db)
+                with store.db:
+                    store.db.execute('UPDATE markdown_policy SET enabled=1 WHERE id=1')
+                    for doc in docs:
+                        store.put(doc, 'api_document_unverified')
+                prepare_fetched(store, [d['AccessionNumber'] for d in docs])
+                result = research(store, 'What happened to Oklo?', client=Client(), generate=False, max_documents=1)
+                self.assertEqual(len(result['discovery']['fetched']), 1)
+                self.assertEqual(store.db.execute("SELECT count(*) FROM markdown_checks WHERE state='ready'").fetchone()[0], 2)
+                self.assertEqual({s['accession'] for s in result['sources']}, {d['AccessionNumber'] for d in docs})
+                for row in store.db.execute('SELECT metadata FROM documents'):
+                    self.assertNotIn('SearchOnlyField', json.loads(row[0]))
+            finally:
+                store.db.close()
+
 
 if __name__ == '__main__':
     unittest.main()
