@@ -4,14 +4,23 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from adams_rag.cpu_context import pack
+from adams_rag.cpu_context import pack, excerpt
 from adams_rag.ollama_engine import OllamaEngine
-from adams_rag.query_terms import subject_phrases
+from adams_rag.query_terms import subject_phrases, history_order
 from adams_rag.research import hybrid_retrieve, fallback_queries, research
 from adams_rag.store import Store
 
 
 class CPUContextTests(unittest.TestCase):
+    def test_history_keeps_recent_milestone_and_denial_qualification(self):
+        rows = [{'title': 'Oklo license application', 'document_date': f'{y}-01-01', 'retrieval_score': s}
+                for y,s in [(2020,.25),(2022,.24),(2025,.21),(2019,.2),(2026,.19)]]
+        self.assertIn('2026-01-01', [r['document_date'] for r in history_order(rows)[:4]])
+        body = 'Distribution and administrative information. ' * 40 + '\n\nThe NRC is denying, without prejudice, the Oklo license application for lack of information. The company may reapply.\n\n' + 'Background license application requirements. ' * 40
+        text, start, end = excerpt(body, 'What is the history of Oklo permits?', maximum=550)
+        self.assertIn('denying, without prejudice', text)
+        self.assertEqual(text, body[start:end])
+
     def test_large_prompts_are_bounded_exact_slices_with_document_diversity(self):
         evidence = [{'citation': i + 1, 'accession': str(i // 2), 'title': 'Inspection',
                      'text': ('Background. ' * 80 + 'The valve failed. Cause and effect must be evaluated. ' + 'More context. ' * 100)}

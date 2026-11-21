@@ -225,6 +225,10 @@ def rank_candidates(store, question, semantic=None, docket=None, date_from=None,
                 scores[key] += .02 * min(3, len(MILESTONE.findall(row['title'])))
                 if decision_title(row['title']):
                     scores[key] += .05
+                    # Official news summaries often express the same milestone
+                    # more directly than a cover letter's distribution material.
+                    if re.search(r'\b(?:news|press)\s+release\b', row['title'], re.I):
+                        scores[key] += .035
         if topics:
             title_terms = {w[:6] for w in re.findall(r'[a-z0-9]+', row['title'].casefold())}
             body_terms = {w[:6] for w in re.findall(r'[a-z0-9]+', row['text'].casefold())}

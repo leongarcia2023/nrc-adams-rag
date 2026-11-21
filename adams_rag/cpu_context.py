@@ -31,15 +31,18 @@ def excerpt(text, question, maximum=1100):
     terms = {w.lower() for w in re.findall(r'[A-Za-z0-9]+', question)
              if len(w) > 2 and w.lower() not in QUESTION_WORDS}
     topics = topic_terms(question, []) if history_question(question) else set()
-    starts = [m.start() for m in re.finditer(r'\S+', text)]
+    starts = [m.start() for m in re.finditer(r'\S+', text)][::35]
+    if topics:
+        starts = sorted(set(starts + [0] + [m.end() for m in re.finditer(r'(?:[.!?]\s+|\n\s*\n)', text)]))
     # Score bounded windows, retaining context on both sides of a match.
     best, best_score = 0, -1
-    for start in starts[::35]:
+    for start in starts:
         end = min(len(text), start + maximum)
         words = set(re.findall(r'[A-Za-z0-9]+', text[start:end].lower()))
         score = len(words & terms)
         if topics:
             score += len({w[:6] for w in words} & topics)
+            score += 3 * len(set(re.findall(r'\b(?:submitted|accepted|denied|denying|withdrawn|issued|intends|without prejudice)\b', text[start:end], re.I)))
         if score > best_score:
             best, best_score = start, score
     raw = text[best:].encode()[:maximum].decode('utf-8', errors='ignore')

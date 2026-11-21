@@ -21,14 +21,20 @@ def decision_title(title):
 def history_order(rows):
     """Keep relevant milestones from distinct years ahead of repeated events."""
     years, representatives, remaining = set(), [], []
+    best_score = max((r.get('retrieval_score', 0) for r in rows), default=0)
     for row in rows:
         year = str(row.get('document_date') or '')[:4]
-        if (len(representatives) < 4 and year.isdigit() and year not in years
-                and MILESTONE.search(row['title'])):
+        if (year.isdigit() and year not in years and MILESTONE.search(row['title'])
+                and row.get('retrieval_score', 0) >= best_score * .6):
             years.add(year); representatives.append(row)
         else:
             remaining.append(row)
-    return representatives + remaining
+    chosen = representatives[:4]
+    if representatives:
+        latest = max(representatives, key=lambda r: str(r.get('document_date') or ''))
+        if latest not in chosen:
+            chosen[-1] = latest
+    return chosen + [r for r in representatives if r not in chosen] + remaining
 
 
 def topic_terms(question, phrases):
