@@ -73,13 +73,15 @@ def search_live(store, client, question, queries, *, docket=None, date_from=None
         candidates[accession] = {"AccessionNumber": accession}
         scores[accession] = 100
     filters = aps_filters(docket, date_from, date_to)
+    from .query_terms import subject_phrases, contains_subject, topic_terms
+    phrases = subject_phrases(question)
     if not direct and not legacy_scope:
         for query in queries[:2]:
             if progress:
                 progress("Searching ADAMS", query)
             try:
                 response = client.request(payload={"q": query, "content": False, "filters": filters, "anyFilters": [],
-                    "mainLibFilter": True, "legacyLibFilter": True, "sort": "", "sortDirection": 0, "skip": 0})
+                    "mainLibFilter": True, "legacyLibFilter": not bool(phrases), "sort": "", "sortDirection": 0, "skip": 0})
                 docs = unpack_search(response)
                 summary["queries"].append({"query": query, "reported_matches": response.get("count"), "examined": len(docs)})
                 # Search content is discovery metadata, never evidence.
@@ -94,7 +96,8 @@ def search_live(store, client, question, queries, *, docket=None, date_from=None
                                 "title": doc.get("DocumentTitle"), "content_scope": "catalog_metadata"}
                             continue
                         pending[accession] = doc
-                        pending_scores[accession] = pending_scores.get(accession, 0) + 1 / (30 + rank)
+                        title_match = phrases and contains_subject(doc.get('DocumentTitle') or '', phrases)
+                        pending_scores[accession] = pending_scores.get(accession, 0) + 1 / (30 + rank) + (.1 if title_match else 0)
                 candidates.update(pending)
                 legacy_records.update(pending_legacy)
                 for accession, score in pending_scores.items():
@@ -152,8 +155,15 @@ def search_live(store, client, question, queries, *, docket=None, date_from=None
 
 def rank_candidates(store, question, semantic=None, docket=None, date_from=None, date_to=None, focus=None, exclusions=None, source_issues=None):
     validate_filters(docket, date_from, date_to)
+    from .query_terms import subject_phrases, contains_subject, topic_terms
+    phrases = subject_phrases(question) if not ACCESSION.search(question) else []
+    topics = topic_terms(question, phrases) if phrases else set()
     lexical = store.lexical(question, 200, docket, date_from, date_to)
     rankings = [lexical]
+    if phrases:
+        # Independently retrieve named-title passages so thousands of ordinary
+        # uses of the same words cannot displace the company's own records.
+        rankings.append(store.lexical(question, 80, docket, date_from, date_to, title_only=True))
     if semantic:
         diagnostic_search = getattr(semantic, 'search_with_diagnostics', None)
         if callable(diagnostic_search):
@@ -183,7 +193,13 @@ def rank_candidates(store, question, semantic=None, docket=None, date_from=None,
         if row["accession"].upper() in direct:
             scores[key] += .1
         elif focus and row["accession"] in focus:
-            scores[key] += .005
+            scores[key] += .05 if phrases else .005
+        if phrases and contains_subject(row['title'], phrases):
+            scores[key] += .04
+        if topics:
+            title_terms = {w[:6] for w in re.findall(r'[a-z0-9]+', row['title'].casefold())}
+            body_terms = {w[:6] for w in re.findall(r'[a-z0-9]+', row['text'].casefold())}
+            scores[key] += .012 * len(topics & title_terms) + .003 * len(topics & body_terms)
     order = sorted(scores, key=scores.get, reverse=True)
     coverage = getattr(semantic, "covered_chunk_ids", None) if semantic else None
     if callable(coverage):
@@ -199,12 +215,12 @@ def rank_candidates(store, question, semantic=None, docket=None, date_from=None,
         order.sort(key=scores.get, reverse=True)
     from .extraction_review import filter_rows
     rows = [{**by_id[key], "retrieval_score": scores[key]} for key in order]
-    from .query_terms import subject_phrases, contains_subject
-    phrases = subject_phrases(question) if not direct else []
     if phrases:
         # A semantic neighbor about a different company is not evidence about
         # the named subject. Never silently relax a missing name into OR words.
-        rows = [r for r in rows if contains_subject(r['title'] + '\n' + r['text'], phrases)]
+        proper = not re.search(r'["“]', question)
+        rows = [r for r in rows if contains_subject(r['title'], phrases)
+                or contains_subject(r['text'], phrases, proper_names=proper)]
     return filter_rows(store.db, rows, exclusions)
 
 

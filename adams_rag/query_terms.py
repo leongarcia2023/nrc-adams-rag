@@ -1,7 +1,13 @@
 """Conservative phrase anchors for names in otherwise ordinary questions."""
 import re
 
-QUESTION_WORDS = set('a an the what which where when how why is are was were does do did can could would should tell me show explain summarize compare and or with for of on in at their its about latest current'.split())
+QUESTION_WORDS = set('a an the what which where when how why is are was were does do did can could would should tell me show explain summarize compare and or with for of on in at their its about latest current far along'.split())
+
+
+def topic_terms(question, phrases):
+    names = {w.casefold() for p in phrases for w in re.findall(r'\w+', p)}
+    return {w[:6] for w in re.findall(r'[a-z0-9]+', question.casefold())
+            if len(w) > 2 and w not in QUESTION_WORDS and w not in names}
 
 
 def subject_phrases(question):
@@ -18,10 +24,15 @@ def subject_phrases(question):
     return list(dict.fromkeys(' '.join(p.split()) for p in explicit + names))[:3]
 
 
-def contains_subject(text, phrases):
-    normalized = ' '.join(re.findall(r'\w+', text.casefold()))
-    return any(re.search(r'(?<!\w)' + re.escape(' '.join(re.findall(r'\w+', p.casefold()))) + r'(?!\w)', normalized)
-               for p in phrases)
+def contains_subject(text, phrases, proper_names=False):
+    normalized = ' '.join(re.findall(r'\w+', text))
+    for phrase in phrases:
+        phrase = ' '.join(re.findall(r'\w+', phrase))
+        forms = [phrase, phrase.upper()] if proper_names else [phrase]
+        flags = 0 if proper_names else re.I
+        if any(re.search(r'(?<!\w)' + re.escape(form) + r'(?!\w)', normalized, flags) for form in forms):
+            return True
+    return False
 
 
 def phrase_expression(phrases):

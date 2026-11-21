@@ -165,8 +165,18 @@ function stageLabel(stage) {
 }
 async function follow(job) {
   let previewShown = false;
+  let interruptions = 0;
   while (true) {
-    const state = await api('/api/jobs/' + encodeURIComponent(job.id));
+    let state;
+    try {
+      state = await api('/api/jobs/' + encodeURIComponent(job.id));
+      interruptions = 0;
+    } catch (error) {
+      if (error.status === 404 || ++interruptions >= 3) throw error;
+      $('stage').textContent = 'Reconnecting to your answer…';
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      continue;
+    }
     const elapsed = state.created_at ? Math.max(0, Math.floor(Date.now() / 1000 - state.created_at)) : 0;
     const duration = elapsed >= 60 ? ` · ${Math.floor(elapsed / 60)}m ${elapsed % 60}s` : elapsed ? ` · ${elapsed}s` : '';
     $('stage').textContent = stageLabel(state.stage || '') + duration;

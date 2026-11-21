@@ -232,4 +232,3 @@ requests use the existing private NRC key and shared rate database, with at most
 phrases remain phrase anchors; an absent company name is not relaxed into common
 individual words. Live discovery is still bounded, so an answer must distinguish
 a dated application milestone from current license issuance.
-

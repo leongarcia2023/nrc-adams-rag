@@ -44,6 +44,8 @@ class CPUContextTests(unittest.TestCase):
                 with store.db:
                     store.put({'AccessionNumber': 'OTHER', 'DocumentTitle': 'General matters of licensing',
                                'content': 'General matters are discussed in this reactor license.'})
+                    store.put({'AccessionNumber': 'ORDINARY', 'DocumentTitle': 'Old hearing',
+                               'content': 'As a general matter, this reactor license hearing is adjourned.'})
                 class WrongSemantic:
                     def search(self, *args):
                         return store.lexical('reactor license')
@@ -53,6 +55,7 @@ class CPUContextTests(unittest.TestCase):
                                'content': 'General Matter submitted an application. Submission is not approval.'})
                 rows = hybrid_retrieve(store, 'How far along is General Matter on their license?', WrongSemantic())
                 self.assertEqual([r['accession'] for r in rows], ['RIGHT'])
+                self.assertEqual({r['accession'] for r in store.lexical('General Matter', title_only=True)}, {'RIGHT','OTHER'})
             finally:
                 store.db.close()
 
@@ -60,6 +63,20 @@ class CPUContextTests(unittest.TestCase):
         self.assertEqual(subject_phrases('How far along is General Matter on their license?'), ['General Matter'])
         self.assertEqual(fallback_queries('How far along is General Matter on their license?'), ['"General Matter"'])
         self.assertEqual(subject_phrases('What happens when a relief valve fails?'), [])
+
+    def test_named_subject_topic_prefers_license_over_unrelated_company_records(self):
+        with tempfile.TemporaryDirectory() as root:
+            store = Store(Path(root) / 'research.sqlite')
+            try:
+                with store.db:
+                    store.put({'AccessionNumber': 'SURVEY', 'DocumentTitle': 'General Matter habitat survey',
+                               'content': 'General Matter surveyed wildlife.'})
+                    store.put({'AccessionNumber': 'LICENSE', 'DocumentTitle': 'General Matter license application acceptance',
+                               'content': 'The General Matter license application is accepted for review. No license has been issued.'})
+                rows = hybrid_retrieve(store, 'How far along is General Matter on their license?')
+                self.assertEqual(rows[0]['accession'], 'LICENSE')
+            finally:
+                store.db.close()
 
     def test_sources_are_published_before_a_model_timeout(self):
         with tempfile.TemporaryDirectory() as root:
